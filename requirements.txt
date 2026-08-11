@@ -1,0 +1,8 @@
+streamlit>=1.50.0
+pandas>=2.0.0
+plotly>=5.18.0
+nfl-data-py==4.3.0
+espn-api==0.30.0
+python-dotenv>=1.0.0
+requests>=2.31.0
+websockets>=12.0

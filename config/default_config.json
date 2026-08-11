@@ -1,0 +1,33 @@
+{
+  "league_name": "My League 2025",
+  "platform": "sleeper",
+  "scoring": {
+    "type": "ppr",
+    "reception": 1.0,
+    "passing_yard": 0.04,
+    "rushing_yard": 0.1,
+    "receiving_yard": 0.1,
+    "pass_td": 4,
+    "rush_td": 6,
+    "rec_td": 6,
+    "two_point_conversion": 2.0,
+    "fumble_lost": -2.0,
+    "interception": -2.0
+  },
+  "teams": 12,
+  "roster_slots": {
+    "QB": 1,
+    "RB": 2,
+    "WR": 2,
+    "TE": 1,
+    "FLEX": 1,
+    "K": 1,
+    "DST": 1,
+    "BN": 6
+  },
+  "draft": {
+    "type": "snake",
+    "total_rounds": 15,
+    "my_pick_position": 6
+  }
+}
