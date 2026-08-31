@@ -39,6 +39,36 @@ def compute_td_luck(
     return round(actual_td_rate - expected_td_rate, 3)
 
 
+def _compute_handcuffs(
+    df: pd.DataFrame,
+    min_projected_pts: float = 20.0,
+    max_starter_ratio: float = 0.75,
+) -> Dict[int, str]:
+    """
+    Infer handcuff RBs by grouping same-team RBs and comparing their own
+    projected points — no depth-chart field required (ours is unpopulated
+    for ESPN-sourced players anyway). The team's top-projected RB is the
+    "starter"; any teammate projecting for at least min_projected_pts but
+    under max_starter_ratio of the starter's total is a handcuff candidate
+    (has standalone value, but is clearly behind the lead back).
+    Returns {df_index: starter_name}.
+    """
+    handcuff_of: Dict[int, str] = {}
+    rb_df = df[df["position"] == "RB"]
+    for team, group in rb_df.groupby("team"):
+        # Players with no real team (free agents, missing data) would otherwise
+        # get grouped together as if they shared a backfield — exclude them.
+        if not team or team in ("FA", "None") or len(group) < 2:
+            continue
+        group = group.sort_values("projected_pts", ascending=False)
+        starter = group.iloc[0]
+        for idx, row in group.iloc[1:].iterrows():
+            pts = row.get("projected_pts", 0) or 0
+            if pts >= min_projected_pts and pts < starter["projected_pts"] * max_starter_ratio:
+                handcuff_of[idx] = starter.get("name", "")
+    return handcuff_of
+
+
 def flag_players(
     vbd_df: pd.DataFrame,
     metrics_df: pd.DataFrame,
@@ -81,9 +111,12 @@ def flag_players(
         df["prev_carry_share"] = None
         df["prev_snap_pct"] = None
 
+    handcuff_of = _compute_handcuffs(df)
+
     df["is_sleeper"] = False
     df["is_bust"] = False
     df["is_handcuff"] = False
+    df["handcuff_of"] = None
     df["sleeper_reasons"] = [[] for _ in range(len(df))]
     df["bust_reasons"] = [[] for _ in range(len(df))]
 
@@ -132,10 +165,11 @@ def flag_players(
             bust_reasons.append(f"Depth chart: {depth}, ADP={round(adp)}")
 
         # -----------------------------------------------
-        # Handcuff: backup RBs behind injury-prone starters
+        # Handcuff: same-team RB with standalone value clearly behind the lead back
         # -----------------------------------------------
-        if pos == "RB" and depth and "backup" in str(depth).lower():
+        if idx in handcuff_of:
             df.at[idx, "is_handcuff"] = True
+            df.at[idx, "handcuff_of"] = handcuff_of[idx]
 
         df.at[idx, "is_sleeper"] = len(sleeper_reasons) >= 1
         df.at[idx, "is_bust"] = len(bust_reasons) >= 1

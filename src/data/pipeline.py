@@ -20,7 +20,7 @@ from src.config.settings import (
     list_saved_leagues,
 )
 
-SEASON = 2025
+SEASON = 2026
 
 
 def log(msg: str, callback: Optional[Callable] = None) -> None:
@@ -89,6 +89,45 @@ def import_espn_league(log_cb: Optional[Callable] = None) -> Optional[LeagueConf
         raise RuntimeError(f"ESPN import failed: {e}")
 
 
+def fetch_espn_projections(config: LeagueConfig, log_cb: Optional[Callable] = None) -> int:
+    """
+    Fetch league-scored projections directly from ESPN for an ESPN league.
+    Used as a fallback when Sleeper hasn't published full-season projections yet
+    (e.g. pre-kickoff) — ESPN's own projected_total_points is already computed
+    under this league's actual scoring settings, so it's used in place of ADP too.
+    """
+    espn_s2 = os.getenv("ESPN_S2", "")
+    swid = os.getenv("ESPN_SWID", "")
+
+    log(f"Fetching ESPN player pool for league {config.league_id}...", log_cb)
+    espn_league = fetcher.espn_get_league(
+        league_id=int(config.league_id), year=config.season, espn_s2=espn_s2, swid=swid,
+    )
+    raw_pool = fetcher.espn_get_full_player_pool(espn_league)
+
+    players = transformer.normalize_espn_players(raw_pool)
+    cache.upsert_players(players)
+    log(f"Cached {len(players)} players from ESPN", log_cb)
+
+    projs = transformer.normalize_espn_projections(raw_pool, season=config.season)
+    cache.upsert_projections(projs)
+    log(f"Cached {len(projs)} projections from ESPN", log_cb)
+
+    # Only write the proxy ADP if no real ADP source (e.g. a merged FantasyPros
+    # CSV) already exists — the proxy is just points-rank restated as "ADP",
+    # so it would win compute_vbd's min()-across-sources and silently override
+    # real market ADP with this circular one on every re-run.
+    existing_sources = {a["source"] for a in cache.get_adp(season=config.season)}
+    if existing_sources - {"espn_proxy"}:
+        log("Real ADP source already present — skipping proxy ADP", log_cb)
+    else:
+        adp = transformer.normalize_espn_adp_from_projections(projs, season=config.season)
+        cache.upsert_adp(adp)
+        log(f"Cached {len(adp)} proxy ADP entries (espn_proxy)", log_cb)
+
+    return len(projs)
+
+
 # ---------------------------------------------------------------------------
 # Player directory + projections
 # ---------------------------------------------------------------------------
@@ -117,6 +156,16 @@ def fetch_projections(log_cb: Optional[Callable] = None) -> int:
     log("Downloading Sleeper projections...", log_cb)
     raw = fetcher.sleeper_get_projections(season=SEASON, week=0)
     normalized = transformer.normalize_sleeper_projections(raw, season=SEASON, week=0)
+
+    if not normalized:
+        # Sleeper hasn't computed the week=0 season aggregate yet (common
+        # pre-kickoff) — build our own season total by summing weekly
+        # projections, which are populated well before the aggregate is.
+        log("Week=0 season aggregate not published yet — summing weekly projections instead...", log_cb)
+        weekly_batch = fetcher.sleeper_get_weekly_projections_batch(season=SEASON)
+        season_totals = transformer.aggregate_sleeper_weekly_to_season(weekly_batch)
+        normalized = transformer.normalize_sleeper_projections(season_totals, season=SEASON, week=0)
+
     cache.upsert_projections(normalized)
     cache.mark_fetched("sleeper_projections")
     log(f"Cached {len(normalized)} projections", log_cb)
@@ -162,6 +211,9 @@ def fetch_nfl_metrics(log_cb: Optional[Callable] = None) -> int:
         ids_df = fetcher.nfldata_import_ids()
         sleeper_to_gsis, name_to_sleeper = transformer.build_id_map(ids_df)
 
+        # nflverse's player_stats release only has data through 2024 right now
+        # (2025 season stats aren't published there yet) — use the latest
+        # actually-available seasons rather than assuming season-1/season-2.
         log("Downloading seasonal stats (2023-2024)...", log_cb)
         seasons = [2023, 2024]
         seasonal_df = fetcher.nfldata_import_seasonal(seasons)

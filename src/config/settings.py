@@ -264,7 +264,7 @@ def build_league_config_from_espn(espn_league, user_settings: dict) -> LeagueCon
 
     return LeagueConfig(
         league_id=str(espn_league.league_id),
-        league_name=getattr(settings, "league_name", "ESPN League"),
+        league_name=getattr(settings, "name", "ESPN League"),
         platform="espn",
         season=espn_league.year,
         teams=len(espn_league.teams),

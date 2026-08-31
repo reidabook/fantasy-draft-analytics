@@ -1,0 +1,35 @@
+{
+  "league_id": "345575",
+  "league_name": "ESPN League",
+  "platform": "espn",
+  "season": 2026,
+  "teams": 14,
+  "scoring": {
+    "type": "half_ppr",
+    "reception": 0.5,
+    "passing_yard": 0.04,
+    "rushing_yard": 0.1,
+    "receiving_yard": 0.1,
+    "pass_td": 4.0,
+    "rush_td": 6.0,
+    "rec_td": 6.0,
+    "two_point_conversion": 2.0,
+    "fumble_lost": -2.0,
+    "interception": -2.0
+  },
+  "roster_slots": {
+    "QB": 1,
+    "RB": 2,
+    "WR": 2,
+    "TE": 1,
+    "FLEX": 1,
+    "K": 1,
+    "DST": 1,
+    "BN": 3
+  },
+  "draft": {
+    "type": "snake",
+    "total_rounds": 12,
+    "my_pick_position": 1
+  }
+}

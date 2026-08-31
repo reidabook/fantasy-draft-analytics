@@ -6,7 +6,7 @@ suitable for passing directly to cache.py upsert functions.
 from __future__ import annotations
 
 import difflib
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 
@@ -89,6 +89,36 @@ def normalize_sleeper_projections(
     return rows
 
 
+_WEEKLY_SUM_FIELDS = {
+    "pass_yd": "pass_yd", "pass_td": "pass_td", "pass_int": "int",
+    "rush_yd": "rush_yd", "rush_td": "rush_td",
+    "rec": "rec", "rec_yd": "rec_yd", "rec_td": "rec_td",
+    "fum_lost": "fum_lost",
+}
+_WEEKLY_2PT_FIELDS = ["pass_2pt", "rush_2pt", "rec_2pt"]
+
+
+def aggregate_sleeper_weekly_to_season(weekly_batch: Dict[int, Dict[str, dict]]) -> Dict[str, dict]:
+    """
+    Sum per-week Sleeper projections (from sleeper_get_weekly_projections_batch)
+    into a season-total stats dict per player, in the same field shape
+    normalize_sleeper_projections()/_compute_pts() expect (note: Sleeper's
+    weekly payload uses 'pass_int' and split pass_2pt/rush_2pt/rec_2pt —
+    remapped here to the unified 'int'/'2pt' keys _compute_pts reads).
+    """
+    totals: Dict[str, dict] = {}
+    for week_data in weekly_batch.values():
+        for player_id, stats in week_data.items():
+            if not stats:
+                continue
+            bucket = totals.setdefault(player_id, {})
+            for src_key, dst_key in _WEEKLY_SUM_FIELDS.items():
+                bucket[dst_key] = bucket.get(dst_key, 0) + stats.get(src_key, 0)
+            two_pt = sum(stats.get(k, 0) for k in _WEEKLY_2PT_FIELDS)
+            bucket["2pt"] = bucket.get("2pt", 0) + two_pt
+    return totals
+
+
 def _compute_pts(stats: dict, rec_pts: float = 1.0) -> float:
     """Compute fantasy points from stat dict with configurable reception scoring."""
     pts = 0.0
@@ -119,6 +149,153 @@ def compute_pts_with_config(stats: dict, scoring) -> float:
     pts += stats.get("int", 0) * scoring.interception
     pts += stats.get("2pt", 0) * scoring.two_point_conversion
     return pts
+
+
+# ---------------------------------------------------------------------------
+# FantasyPros local CSV normalization
+# ---------------------------------------------------------------------------
+
+def normalize_fantasypros_local(
+    raw: List[dict],
+    player_id_map: Dict[str, str],
+    season: int,
+) -> Tuple[List[dict], List[dict]]:
+    """
+    Convert fetcher.fantasypros_parse_local_csv() output → (projection rows, adp rows).
+    player_id_map: lower-case player name → our internal player id (e.g. espn_12345).
+    Points are computed with the same formula normalize_sleeper_projections uses
+    (0.04/pass-yd, 0.1/rush-yd, 0.1/rec-yd, 4/pass-td, 6/rush-td, 6/rec-td), which
+    matches this league's actual scoring exactly except for reception value.
+    Unmatched names are skipped rather than guessed at.
+    """
+    suffix_stripped_map = {
+        _strip_suffix(k): v for k, v in player_id_map.items()
+    }
+
+    proj_rows = []
+    adp_rows = []
+    unmatched = []
+    for p in raw:
+        name_key = p["name"].lower()
+        player_id = (
+            player_id_map.get(name_key)
+            or suffix_stripped_map.get(_strip_suffix(name_key))
+            or _fuzzy_lookup(name_key, player_id_map)
+        )
+        if not player_id:
+            unmatched.append(p["name"])
+            continue
+
+        stats = {
+            "pass_yd": p["pass_yd"], "pass_td": p["pass_td"],
+            "rush_yd": p["rush_yd"], "rush_td": p["rush_td"],
+            "rec": p["rec"], "rec_yd": p["rec_yd"], "rec_td": p["rec_td"],
+        }
+        pts_ppr = round(_compute_pts(stats, rec_pts=1.0), 2)
+        pts_half = round(_compute_pts(stats, rec_pts=0.5), 2)
+        pts_std = round(_compute_pts(stats, rec_pts=0.0), 2)
+        if pts_ppr == 0 and pts_half == 0 and pts_std == 0:
+            continue
+
+        proj_rows.append({
+            "player_id": player_id,
+            "season": season,
+            "week": 0,
+            "source": "fantasypros_local",
+            "pts_ppr": pts_ppr,
+            "pts_half_ppr": pts_half,
+            "pts_std": pts_std,
+            "pass_yd": stats["pass_yd"], "pass_td": stats["pass_td"],
+            "rush_yd": stats["rush_yd"], "rush_td": stats["rush_td"],
+            "rec": stats["rec"], "rec_yd": stats["rec_yd"], "rec_td": stats["rec_td"],
+        })
+        adp_rows.append({
+            "player_id": player_id,
+            "season": season,
+            "source": "fantasypros_local",
+            "adp_overall": float(p["rank"]),
+            "adp_ppr": float(p["rank"]),
+            "adp_half_ppr": float(p["rank"]),
+            "adp_std": float(p["rank"]),
+        })
+
+    if unmatched:
+        print(f"  fantasypros_local: {len(unmatched)} unmatched names (skipped): {unmatched[:10]}{'...' if len(unmatched) > 10 else ''}")
+
+    return proj_rows, adp_rows
+
+
+# ---------------------------------------------------------------------------
+# ESPN player pool normalization
+# ---------------------------------------------------------------------------
+
+def normalize_espn_players(raw: List[dict]) -> List[dict]:
+    """Convert espn_get_full_player_pool() output → normalized player dicts."""
+    players = []
+    for p in raw:
+        position = p.get("position", "")
+        if position not in SKILL_POSITIONS:
+            continue
+        players.append({
+            "id": f"espn_{p['espn_id']}",
+            "name": _clean_name(p.get("name", "")),
+            "position": position,
+            "team": p.get("team") or "FA",
+            "age": None,
+            "depth_chart_pos": None,
+            "injury_status": p.get("injury_status") if isinstance(p.get("injury_status"), str) else None,
+            "gsis_id": None,
+            "sleeper_id": None,
+            "espn_id": str(p["espn_id"]),
+        })
+    return players
+
+
+def normalize_espn_projections(raw: List[dict], season: int) -> List[dict]:
+    """
+    Convert espn_get_full_player_pool() output → projection rows.
+    projected_total_points is already scored under the league's real settings by
+    espn_api, so it's used as-is for whichever scoring column the league needs;
+    the other two columns are filled with the same value as a reasonable proxy
+    (not accurate if this data is later reused for a differently-scored league).
+    """
+    rows = []
+    for p in raw:
+        position = p.get("position", "")
+        if position not in SKILL_POSITIONS:
+            continue
+        pts = float(p.get("projected_total_points", 0.0) or 0.0)
+        if pts <= 0:
+            continue
+        rows.append({
+            "player_id": f"espn_{p['espn_id']}",
+            "season": season,
+            "week": 0,
+            "source": "espn",
+            "pts_ppr": pts,
+            "pts_half_ppr": pts,
+            "pts_std": pts,
+            "pass_yd": 0, "pass_td": 0, "rush_yd": 0, "rush_td": 0,
+            "rec": 0, "rec_yd": 0, "rec_td": 0,
+        })
+    return rows
+
+
+def normalize_espn_adp_from_projections(projections: List[dict], season: int) -> List[dict]:
+    """Proxy ADP from ESPN-scored projection ranking (used when no real ADP source is reachable)."""
+    sorted_proj = sorted(projections, key=lambda x: x.get("pts_half_ppr", 0), reverse=True)
+    rows = []
+    for rank, proj in enumerate(sorted_proj, 1):
+        rows.append({
+            "player_id": proj["player_id"],
+            "season": season,
+            "source": "espn_proxy",
+            "adp_overall": float(rank),
+            "adp_ppr": float(rank),
+            "adp_half_ppr": float(rank),
+            "adp_std": float(rank),
+        })
+    return rows
 
 
 # ---------------------------------------------------------------------------
@@ -169,6 +346,12 @@ def normalize_sleeper_adp_from_projections(projections: List[dict], season: int)
     return rows
 
 
+def _strip_suffix(name: str) -> str:
+    """Strip trailing Jr./Sr./II/III/IV suffixes for cross-source name matching."""
+    import re
+    return re.sub(r"\s+(jr\.?|sr\.?|ii|iii|iv)$", "", name.strip())
+
+
 def _fuzzy_lookup(name: str, name_map: Dict[str, str], cutoff: float = 0.85) -> Optional[str]:
     """Fuzzy name match fallback."""
     matches = difflib.get_close_matches(name, name_map.keys(), n=1, cutoff=cutoff)
@@ -181,23 +364,31 @@ def _fuzzy_lookup(name: str, name_map: Dict[str, str], cutoff: float = 0.85) -> 
 
 def build_id_map(ids_df: "pd.DataFrame") -> Dict[str, str]:
     """
-    Build sleeper_id → gsis_id map from nfl_data_py import_ids() output.
+    Build our canonical player_id → gsis_id map from nfl_data_py import_ids() output.
+    Canonical player_id matches whatever players.id convention was used to store the
+    player: raw sleeper_id for Sleeper-sourced players, "espn_{espn_id}" for
+    ESPN-sourced ones (see normalize_espn_players) — nfl_data_py's id table carries
+    both sleeper_id and espn_id directly, so both map to the same gsis_id per player.
     Also returns name → sleeper_id map for ADP fuzzy matching.
     """
-    sleeper_to_gsis = {}
+    player_to_gsis = {}
     name_to_sleeper = {}
 
     for _, row in ids_df.iterrows():
         sleeper_id = str(row.get("sleeper_id", "")) if pd.notna(row.get("sleeper_id")) else None
+        espn_id = str(int(row["espn_id"])) if pd.notna(row.get("espn_id")) else None
         gsis_id = str(row.get("gsis_id", "")) if pd.notna(row.get("gsis_id")) else None
         name = str(row.get("name", "")).lower().strip() if pd.notna(row.get("name")) else None
 
-        if sleeper_id and gsis_id:
-            sleeper_to_gsis[sleeper_id] = gsis_id
+        if gsis_id:
+            if sleeper_id:
+                player_to_gsis[sleeper_id] = gsis_id
+            if espn_id:
+                player_to_gsis[f"espn_{espn_id}"] = gsis_id
         if name and sleeper_id:
             name_to_sleeper[name] = sleeper_id
 
-    return sleeper_to_gsis, name_to_sleeper
+    return player_to_gsis, name_to_sleeper
 
 
 # ---------------------------------------------------------------------------
@@ -206,37 +397,42 @@ def build_id_map(ids_df: "pd.DataFrame") -> Dict[str, str]:
 
 def normalize_seasonal_metrics(
     seasonal_df: "pd.DataFrame",
-    sleeper_to_gsis: Dict[str, str],
+    player_to_gsis: Dict[str, str],
     season: int,
 ) -> List[dict]:
     """
     Convert nfl_data_py seasonal DataFrame → advanced_metrics DB rows.
-    Maps gsis_id back to sleeper_id for joining.
+    Maps gsis_id back to our canonical player_id(s) — a single gsis_id can map to
+    both a sleeper_id and an "espn_{id}" form (see build_id_map), so one metrics
+    row is emitted per canonical id to match whichever convention players.id uses.
     """
-    # Build reverse map gsis → sleeper
-    gsis_to_sleeper = {v: k for k, v in sleeper_to_gsis.items()}
+    # Build reverse map gsis → [canonical player_ids] (one-to-many)
+    gsis_to_players: Dict[str, List[str]] = {}
+    for player_id, gsis_id in player_to_gsis.items():
+        gsis_to_players.setdefault(gsis_id, []).append(player_id)
 
     rows = []
     for _, row in seasonal_df.iterrows():
         if row.get("season") != season:
             continue
-        player_id = row.get("player_id", "")  # gsis_id in nfl_data_py
-        sleeper_id = gsis_to_sleeper.get(str(player_id))
-        if not sleeper_id:
+        gsis_id = str(row.get("player_id", ""))  # gsis_id in nfl_data_py
+        player_ids = gsis_to_players.get(gsis_id)
+        if not player_ids:
             continue
 
-        rows.append({
-            "player_id": sleeper_id,
-            "season": season,
-            "snap_pct": _safe_float(row.get("snap_pct")),
-            "target_share": _safe_float(row.get("target_share")),
-            "air_yards_share": _safe_float(row.get("air_yards_share")),
-            "wopr": _safe_float(row.get("wopr")),
-            "carry_share": _safe_float(row.get("carry_share")),
-            "rz_target_share": _safe_float(row.get("racr")),  # proxy
-            "epa_per_play": _safe_float(row.get("receiving_epa")),
-            "td_luck": None,  # computed separately in flags.py
-        })
+        for player_id in player_ids:
+            rows.append({
+                "player_id": player_id,
+                "season": season,
+                "snap_pct": _safe_float(row.get("snap_pct")),
+                "target_share": _safe_float(row.get("target_share")),
+                "air_yards_share": _safe_float(row.get("air_yards_share")),
+                "wopr": _safe_float(row.get("wopr")),
+                "carry_share": _safe_float(row.get("carry_share")),
+                "rz_target_share": _safe_float(row.get("racr")),  # proxy
+                "epa_per_play": _safe_float(row.get("receiving_epa")),
+                "td_luck": None,  # computed separately in flags.py
+            })
     return rows
 
 

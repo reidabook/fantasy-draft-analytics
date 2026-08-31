@@ -8,7 +8,7 @@ import pandas as pd
 st.set_page_config(page_title="Sleeper Radar", layout="wide")
 st.title("📡 Sleeper Radar")
 
-from src.data.cache import get_vbd_scores, get_advanced_metrics
+from src.data.cache import get_vbd_scores, get_advanced_metrics, get_latest_metrics_season
 from src.analytics.flags import flag_players
 
 config = st.session_state.get("active_league")
@@ -29,9 +29,15 @@ def load_df(league_id: str, season: int, scoring_type: str) -> pd.DataFrame:
     # flag_players() expects 'id' column (compute_vbd output convention).
     # get_vbd_scores() returns 'player_id'. Rename to bridge the mismatch.
     df = df.rename(columns={"player_id": "id"})
-    metrics_rows = get_advanced_metrics(season)
+    # Historical metrics lag the league's own (future) draft season, so anchor
+    # to the latest season actually cached rather than `season`/`season - 1`.
+    metrics_season = get_latest_metrics_season()
+    if metrics_season is not None:
+        metrics_rows = get_advanced_metrics(metrics_season)
+        prior_rows = get_advanced_metrics(metrics_season - 1)
+    else:
+        metrics_rows, prior_rows = [], []
     metrics_df = pd.DataFrame(metrics_rows) if metrics_rows else pd.DataFrame()
-    prior_rows = get_advanced_metrics(season - 1)
     prior_df = pd.DataFrame(prior_rows) if prior_rows else None
     df = flag_players(df, metrics_df, prior_df)
     return df
@@ -204,7 +210,7 @@ with tab3:
     st.markdown("Backup RBs worth rostering based on starter injury risk and workload opportunity.")
 
     if has_flags:
-        handcuffs = df[df["flag_summary"].str.contains("HANDCUFF", na=False)].copy()
+        handcuffs = df[df["flag_summary"].str.contains("HC", na=False)].copy()
     else:
         # Fallback: RBs with ADP in rounds 8+ (backup tier)
         rb_df = df[df["position"] == "RB"].copy()
@@ -220,6 +226,9 @@ with tab3:
             st.markdown(player_header(row), unsafe_allow_html=True)
 
             evidence = []
+            starter = row.get("handcuff_of")
+            if starter:
+                evidence.append(f"Backs up {starter} — standalone value if starter is out")
             # Show handcuff info if available
             carry = row.get("carry_share")
             if carry and carry > 0.10:

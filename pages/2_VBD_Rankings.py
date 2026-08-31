@@ -117,7 +117,7 @@ df = df.sort_values(sort_col, ascending=True if sort_col in ("overall_rank", "ad
 # ---------------------------------------------------------------------------
 
 with col_export:
-    csv_cols = ["overall_rank", "tier", "name", "position", "team",
+    csv_cols = ["overall_rank", "tier", "name", "position", "team", "bye_week",
                 "projected_pts", "vbd_surplus", "adp_overall", "adp_gap"]
     export_df = df[[c for c in csv_cols if c in df.columns]].copy()
     csv_buf = io.StringIO()

@@ -16,10 +16,11 @@ st.title("🏟️ Draft Board")
 from src.config.settings import LeagueConfig
 from src.data.cache import (
     get_vbd_scores, get_all_players, get_projections, get_adp,
-    upsert_vbd_scores, get_draft_picks,
+    upsert_vbd_scores, get_draft_picks, get_advanced_metrics, get_latest_metrics_season,
 )
 from src.analytics.vbd import compute_vbd, vbd_to_db_rows
 from src.analytics.scarcity import compute_scarcity, scarcity_message
+from src.analytics.flags import flag_players
 from src.draft.board import DraftBoard
 from src.draft.recommender import get_recommendations
 
@@ -62,7 +63,17 @@ def load_vbd_df(league_id: str, season: int, scoring_type: str) -> pd.DataFrame:
     rows = get_vbd_scores(league_id, season, scoring_type)
     if not rows:
         return pd.DataFrame()
-    return pd.DataFrame(rows)
+    df = pd.DataFrame(rows)
+    # flag_players() (sleeper/bust/handcuff detection) expects an 'id' column
+    # (compute_vbd's own convention); get_vbd_scores() returns 'player_id'.
+    df = df.rename(columns={"player_id": "id"})
+    metrics_season = get_latest_metrics_season()
+    if metrics_season is not None:
+        metrics_df = pd.DataFrame(get_advanced_metrics(metrics_season))
+        prior_df = pd.DataFrame(get_advanced_metrics(metrics_season - 1))
+    else:
+        metrics_df, prior_df = pd.DataFrame(), None
+    return flag_players(df, metrics_df, prior_df)
 
 
 def get_available_df(board: DraftBoard) -> pd.DataFrame:
@@ -182,8 +193,8 @@ with left_col:
         pid_col = "id" if "id" in disp_df.columns else "player_id"
 
         # Table header
-        th = st.columns([0.5, 2.2, 0.6, 0.8, 0.8, 0.9, 0.9, 1.5])
-        for col, lbl in zip(th, ["Rank", "Name", "Pos", "Team", "VBD", "ADP", "Gap", "Action"]):
+        th = st.columns([0.5, 2.0, 0.6, 0.7, 0.6, 0.8, 0.8, 0.9, 1.5])
+        for col, lbl in zip(th, ["Rank", "Name", "Pos", "Team", "Bye", "VBD", "ADP", "Gap", "Action"]):
             col.markdown(f"<span style='color:#6b7280;font-size:0.8em'>{lbl}</span>", unsafe_allow_html=True)
 
         POS_COLOR = {"QB": "#FF6B6B", "RB": "#4ECDC4", "WR": "#45B7D1", "TE": "#96CEB4"}
@@ -196,10 +207,19 @@ with left_col:
             gap_color = "#4ade80" if adp_gap >= 5 else ("#f87171" if adp_gap <= -5 else "#9ca3af")
             adp_val = row.get("adp_overall")
             adp_str = f"{adp_val:.0f}" if adp_val and adp_val < 999 else "—"
-            flag = row.get("flag_summary", "")
-            flag_icon = "🟢" if "SLEEPER" in str(flag) else ("🔴" if "BUST" in str(flag) else "")
+            bye_val = row.get("bye_week")
+            bye_str = f"{int(bye_val)}" if bye_val else "—"
+            flag = str(row.get("flag_summary", ""))
+            flag_icons = []
+            if "SLEEPER" in flag:
+                flag_icons.append("🟢")
+            if "BUST" in flag:
+                flag_icons.append("🔴")
+            if "HC" in flag:
+                flag_icons.append("🤝")
+            flag_icon = "".join(flag_icons)
 
-            tc = st.columns([0.5, 2.2, 0.6, 0.8, 0.8, 0.9, 0.9, 1.5])
+            tc = st.columns([0.5, 2.0, 0.6, 0.7, 0.6, 0.8, 0.8, 0.9, 1.5])
             tc[0].markdown(f"<span style='font-size:0.85em;color:#9ca3af'>{int(row.get('overall_rank',0))}</span>", unsafe_allow_html=True)
             tc[1].markdown(
                 f"<span style='color:{color};font-weight:600;font-size:0.9em'>{row.get('name','')} {flag_icon}</span>",
@@ -207,16 +227,17 @@ with left_col:
             )
             tc[2].markdown(f"<span style='color:{color};font-size:0.85em;font-weight:700'>{pos}</span>", unsafe_allow_html=True)
             tc[3].markdown(f"<span style='font-size:0.85em;color:#9ca3af'>{row.get('team','')}</span>", unsafe_allow_html=True)
-            tc[4].markdown(f"<span style='font-size:0.85em'>{row.get('vbd_surplus',0):.1f}</span>", unsafe_allow_html=True)
-            tc[5].markdown(f"<span style='font-size:0.85em;color:#9ca3af'>{adp_str}</span>", unsafe_allow_html=True)
-            tc[6].markdown(
+            tc[4].markdown(f"<span style='font-size:0.85em;color:#9ca3af'>{bye_str}</span>", unsafe_allow_html=True)
+            tc[5].markdown(f"<span style='font-size:0.85em'>{row.get('vbd_surplus',0):.1f}</span>", unsafe_allow_html=True)
+            tc[6].markdown(f"<span style='font-size:0.85em;color:#9ca3af'>{adp_str}</span>", unsafe_allow_html=True)
+            tc[7].markdown(
                 f"<span style='font-size:0.85em;color:{gap_color};font-weight:600'>"
                 f"{'+' if adp_gap > 0 else ''}{adp_gap:.0f}</span>",
                 unsafe_allow_html=True,
             )
 
             # Draft buttons
-            btn_col1, btn_col2 = tc[7].columns(2)
+            btn_col1, btn_col2 = tc[8].columns(2)
             if btn_col1.button("Mine", key=f"mine_{pid}", help="Draft to my team"):
                 board.mark_pick(pid, team_number=config.draft.my_pick_position)
                 load_vbd_df.clear()
@@ -241,16 +262,32 @@ with right_col:
         st.info("No picks yet. Start drafting!")
     else:
         SLOT_ORDER = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "K", "DST", "BN"]
+        POS_COLOR = {"QB": "#FF6B6B", "RB": "#4ECDC4", "WR": "#45B7D1", "TE": "#96CEB4", "K": "#FBBF24", "DST": "#A78BFA"}
+
+        # Bye-week stacking: flag any week where 2+ starters (non-K/DST) share a bye
+        bye_counts: dict = {}
+        for pick in my_roster:
+            wk = pick.get("bye_week")
+            pos = pick.get("position", "?")
+            if wk and pos not in ("K", "DST"):
+                bye_counts[wk] = bye_counts.get(wk, 0) + 1
+        stacked_byes = {wk: n for wk, n in bye_counts.items() if n >= 2}
+        if stacked_byes:
+            parts = ", ".join(f"Week {wk} ({n} players)" for wk, n in sorted(stacked_byes.items()))
+            st.warning(f"⚠️ Bye week stacking: {parts}")
+
         for pick in my_roster:
             pos = pick.get("position", "?")
             name = pick.get("name", pick.get("player_id", "?"))
             rnd = pick.get("round_number", "?")
-            POS_COLOR = {"QB": "#FF6B6B", "RB": "#4ECDC4", "WR": "#45B7D1", "TE": "#96CEB4", "K": "#FBBF24", "DST": "#A78BFA"}
+            bye = pick.get("bye_week")
+            bye_str = f"Bye {int(bye)}" if bye else ""
             color = POS_COLOR.get(pos, "#888")
             st.markdown(
                 f"<div style='display:flex;gap:8px;align-items:center;margin:2px 0;'>"
                 f"<span style='color:{color};font-weight:700;font-size:0.8em;width:30px'>{pos}</span>"
                 f"<span style='font-size:0.9em'>{name}</span>"
+                f"<span style='color:#6b7280;font-size:0.72em;width:50px'>{bye_str}</span>"
                 f"<span style='color:#6b7280;font-size:0.75em;margin-left:auto'>Rd {rnd}</span>"
                 f"</div>",
                 unsafe_allow_html=True,

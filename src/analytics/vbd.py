@@ -69,8 +69,10 @@ def compute_vbd(
     else:
         df["adp_overall"] = 999.0
 
-    # Limit to skill positions
-    df = df[df["position"].isin(["QB", "RB", "WR", "TE"])].copy()
+    # Limit to skill positions with an actual projection — players with no
+    # projection data would otherwise dump into one giant tier and skew the
+    # tier-gap statistics for everyone else (see _assign_tiers)
+    df = df[df["position"].isin(["QB", "RB", "WR", "TE"]) & (df["projected_pts"] > 0)].copy()
 
     # Position ranks by projected points
     df["position_rank"] = df.groupby("position")["projected_pts"].rank(
@@ -143,7 +145,7 @@ def _get_replacement_pts(df: pd.DataFrame, replacement: Dict[str, int]) -> Dict[
     return result
 
 
-def _assign_tiers(df: pd.DataFrame, n_tiers: int = 8) -> pd.DataFrame:
+def _assign_tiers(df: pd.DataFrame, n_tiers: int = 40) -> pd.DataFrame:
     """
     Auto-detect tiers from VBD cliffs (gaps in vbd_surplus distribution).
     Assigns tier 1 (best) through n_tiers.
@@ -156,19 +158,28 @@ def _assign_tiers(df: pd.DataFrame, n_tiers: int = 8) -> pd.DataFrame:
 
     # Find gaps between consecutive players
     gaps = sorted_surplus.diff().abs().fillna(0)
-    # Tier break = gap larger than 20% of the range
-    threshold = sorted_surplus.std() * 0.5
+    # A 0.5 std threshold produces only ~2-3 tiers across a full draft-relevant
+    # pool (too coarse to be useful round-to-round); 0.15 yields ~10-15 tiers,
+    # which lines up with real draft-day value cliffs.
+    threshold = sorted_surplus.std() * 0.15
     tier_breaks = set(gaps[gaps > threshold].index.tolist())
 
-    # Build tier assignments
+    # The tail of the pool declines too smoothly for any gap threshold to find
+    # cliffs, which would otherwise dump hundreds of players into one final
+    # tier. Force a break every max_tier_size players so tiers stay usable
+    # round-to-round even without a clean value cliff.
+    max_tier_size = 12
     tier_map = {}  # index in sorted → tier
     current_tier = 1
+    size_in_tier = 0
     for i, surplus in enumerate(sorted_surplus):
-        if i > 0 and i in tier_breaks:
+        if i > 0 and (i in tier_breaks or size_in_tier >= max_tier_size):
             current_tier += 1
+            size_in_tier = 0
         if current_tier > n_tiers:
             current_tier = n_tiers
         tier_map[i] = current_tier
+        size_in_tier += 1
 
     # Map back to df by rank order
     rank_to_tier = {}

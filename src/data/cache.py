@@ -162,6 +162,9 @@ def init_db() -> None:
     """Create all tables if they don't exist."""
     with get_conn() as conn:
         conn.executescript(SCHEMA_SQL)
+        cols = {r["name"] for r in conn.execute("PRAGMA table_info(players)").fetchall()}
+        if "bye_week" not in cols:
+            conn.execute("ALTER TABLE players ADD COLUMN bye_week INTEGER")
 
 
 # ---------------------------------------------------------------------------
@@ -222,17 +225,35 @@ def freshness_label(source_key: str) -> str:
 # ---------------------------------------------------------------------------
 
 def upsert_players(players: List[Dict[str, Any]]) -> None:
+    # ON CONFLICT DO UPDATE (not INSERT OR REPLACE) so columns not passed here
+    # — bye_week, set separately via upsert_bye_weeks() — aren't wiped back to
+    # NULL on every refetch of the base player directory.
     with get_conn() as conn:
         conn.executemany(
             """
-            INSERT OR REPLACE INTO players
+            INSERT INTO players
                 (id, name, position, team, age, depth_chart_pos, injury_status,
                  gsis_id, sleeper_id, espn_id, updated_at)
             VALUES
                 (:id, :name, :position, :team, :age, :depth_chart_pos, :injury_status,
                  :gsis_id, :sleeper_id, :espn_id, :updated_at)
+            ON CONFLICT(id) DO UPDATE SET
+                name=excluded.name, position=excluded.position, team=excluded.team,
+                age=excluded.age, depth_chart_pos=excluded.depth_chart_pos,
+                injury_status=excluded.injury_status, gsis_id=excluded.gsis_id,
+                sleeper_id=excluded.sleeper_id, espn_id=excluded.espn_id,
+                updated_at=excluded.updated_at
             """,
             [{**p, "updated_at": datetime.utcnow().isoformat()} for p in players],
+        )
+
+
+def upsert_bye_weeks(bye_weeks: Dict[str, int]) -> None:
+    """bye_weeks: {player_id: bye_week}."""
+    with get_conn() as conn:
+        conn.executemany(
+            "UPDATE players SET bye_week=? WHERE id=?",
+            [(wk, pid) for pid, wk in bye_weeks.items()],
         )
 
 
@@ -301,6 +322,18 @@ def upsert_advanced_metrics(metrics: List[Dict[str, Any]]) -> None:
         )
 
 
+def get_latest_metrics_season() -> Optional[int]:
+    """
+    Return the most recent season with cached advanced_metrics, or None.
+    Historical metrics (nfl_data_py) lag the upcoming draft season by a year
+    or more, so callers computing YoY trends should anchor to this instead of
+    the league's own (future) season.
+    """
+    with get_conn() as conn:
+        row = conn.execute("SELECT MAX(season) AS s FROM advanced_metrics").fetchone()
+    return row["s"] if row and row["s"] is not None else None
+
+
 def get_advanced_metrics(season: int) -> List[dict]:
     with get_conn() as conn:
         rows = conn.execute(
@@ -360,13 +393,19 @@ def get_vbd_scores(league_id: str, season: int, scoring_type: str) -> List[dict]
     with get_conn() as conn:
         rows = conn.execute(
             """
-            SELECT v.*, p.name, p.position, p.team, p.age, p.injury_status, p.depth_chart_pos
+            SELECT v.*, p.name, p.position, p.team, p.age, p.injury_status, p.depth_chart_pos,
+                   p.bye_week, a.adp_overall
             FROM vbd_scores v
             JOIN players p ON v.player_id = p.id
+            LEFT JOIN (
+                SELECT player_id, MIN(adp_overall) AS adp_overall
+                FROM adp WHERE season=?
+                GROUP BY player_id
+            ) a ON a.player_id = v.player_id
             WHERE v.league_id=? AND v.season=? AND v.scoring_type=?
             ORDER BY v.overall_rank ASC
             """,
-            (league_id, season, scoring_type),
+            (season, league_id, season, scoring_type),
         ).fetchall()
     return [dict(r) for r in rows]
 
@@ -394,7 +433,7 @@ def get_draft_picks(league_id: str, season: int) -> List[dict]:
     with get_conn() as conn:
         rows = conn.execute(
             """
-            SELECT dp.*, p.name, p.position, p.team
+            SELECT dp.*, p.name, p.position, p.team, p.bye_week
             FROM draft_picks dp
             LEFT JOIN players p ON dp.player_id = p.id
             WHERE dp.league_id=? AND dp.season=?
