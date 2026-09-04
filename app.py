@@ -41,7 +41,7 @@ def build_sidebar():
             st.session_state.selected_league_file = saved[0] if saved else None
 
         selected = st.selectbox(
-            "Active League",
+            "League Name",
             options=league_options,
             index=0 if not saved else 1,
             key="league_selector",
@@ -74,9 +74,9 @@ def build_sidebar():
             icon = {"fresh": "🟢", "stale": "🟡", "old": "🔴", "never": "⚫"}.get(fl, "⚫")
             st.caption(f"{icon} {label}: {fl}")
 
-        # Quick refresh button
+        # Refresh buttons
         st.markdown("---")
-        if st.button("Run Quick Refresh", use_container_width=True):
+        if st.button("Run Quick Refresh", use_container_width=True, help="Projections + ADP only (respects 24h cache)"):
             with st.spinner("Refreshing..."):
                 from src.data.pipeline import run_quick
                 logs = []
@@ -84,6 +84,16 @@ def build_sidebar():
                 for msg in logs:
                     st.caption(msg)
             st.success("Refresh complete")
+            st.rerun()
+
+        if st.button("Run Full Refresh", use_container_width=True, help="Players + Projections + ADP + NFL Metrics (respects 7-day cache on Players/NFL Metrics)"):
+            with st.spinner("Refreshing everything — this can take a few minutes..."):
+                from src.data.pipeline import run_full
+                logs = []
+                run_full(log_cb=logs.append)
+                for msg in logs:
+                    st.caption(msg)
+            st.success("Full refresh complete — go to VBD Rankings and click ↺ Recalc")
             st.rerun()
 
         st.markdown("---")
