@@ -63,7 +63,10 @@ contaminate each other's VBD scores, draft picks, or player notes.
 
 ### Cache Freshness
 `data/cache/.cache_manifest.json` stores last-fetch timestamps per data source.
-TTLs: players = 168h, nfl_metrics = 168h, projections = 24h, ADP = 24h.
+TTLs: players = 24h, nfl_metrics = 168h, projections = 24h, ADP = 24h.
+Players is 24h (not 168h like nfl_metrics) because it carries team/roster-status/
+injury designation, which moves daily in-season — nfl_metrics is closed-season
+historical data and doesn't need to be that fresh.
 `is_stale(key, hours)` / `mark_fetched(key)` / `freshness_label(key)` in `cache.py`.
 
 ### The SEASON Constant
@@ -206,7 +209,7 @@ Requires `websockets` package. Raises ImportError with helpful message if missin
 
 ```
 prefetch.py --quick                              →  run_quick()   projections (24h TTL) + ADP (24h TTL)
-prefetch.py --full                               →  run_full()    players (168h) + projections + ADP + nfl_metrics (168h)
+prefetch.py --full                               →  run_full()    players (24h) + projections + ADP + nfl_metrics (168h)
 prefetch.py --vbd                                →  recompute_all_vbd()   no fetch, reruns analytics only
 prefetch.py --local-csv PATH [--local-bye-csv PATH] →  import_fantasypros_local()   ingest a manually-downloaded
                                                      FantasyPros "Draft ALL Rankings" CSV as PPR projections + ADP

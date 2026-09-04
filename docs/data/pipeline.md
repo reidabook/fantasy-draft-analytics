@@ -38,7 +38,7 @@ Complete weekly refresh. Fetches everything including heavyweight nfl_data_py me
 
 | Step | Function | TTL |
 |------|----------|-----|
-| Players | `fetch_players()` | 168h (weekly) |
+| Players | `fetch_players()` | 24h |
 | Projections | `fetch_projections()` | 24h |
 | ADP | `fetch_adp()` | 24h |
 | NFL metrics | `fetch_nfl_metrics()` | 168h (weekly) |
@@ -59,7 +59,10 @@ sleeper_get_all_players()
   → mark_fetched("sleeper_players")
 ```
 
-Checks `is_stale("sleeper_players", 168)` before fetching. Logs player count on success.
+Checks `is_stale("sleeper_players", 24)` before fetching. Logs player count on success.
+Deliberately 24h rather than the 168h "weekly" cadence of the other `--full` sources —
+this carries team/roster-status/injury designation, which moves daily in-season
+(especially around roster cutdowns).
 
 ### `fetch_projections(log=None)`
 

@@ -221,7 +221,7 @@ Playoff schedule strength grades (weeks 15–17). Computed by `schedule.py`.
 
 | Source key | TTL | Updated by |
 |------------|-----|-----------|
-| `sleeper_players` | 168h | `fetch_players()` |
+| `sleeper_players` | 24h | `fetch_players()` |
 | `sleeper_projections` | 24h | `fetch_projections()` |
 | `adp` | 24h | `fetch_adp()` |
 | `nfl_metrics` | 168h | `fetch_nfl_metrics()` |

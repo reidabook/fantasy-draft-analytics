@@ -169,8 +169,12 @@ def fetch_espn_projections(config: LeagueConfig, log_cb: Optional[Callable] = No
 
 def fetch_players(log_cb: Optional[Callable] = None) -> int:
     """Download and cache Sleeper player directory. Returns count."""
-    if not cache.is_stale("sleeper_players", max_age_hours=168):  # weekly
-        log("Players cache is fresh (< 7 days), skipping", log_cb)
+    # 24h, not the 168h "weekly" cadence of the other --full sources: this
+    # carries team/roster-status/injury designation, which moves daily during
+    # the season (especially around roster cutdowns) — nfl_metrics below is
+    # closed-season historical data and genuinely doesn't need to be this fresh.
+    if not cache.is_stale("sleeper_players", max_age_hours=24):
+        log("Players cache is fresh (< 24h), skipping", log_cb)
         return 0
 
     log("Downloading Sleeper player directory...", log_cb)
