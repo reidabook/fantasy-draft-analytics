@@ -461,6 +461,19 @@ def undo_last_pick(league_id: str, season: int) -> Optional[dict]:
     return None
 
 
+def delete_draft_pick(league_id: str, season: int, pick_id: int) -> Optional[dict]:
+    """Remove a single pick by its row id, regardless of when it was made."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM draft_picks WHERE id=? AND league_id=? AND season=?",
+            (pick_id, league_id, season),
+        ).fetchone()
+        if row:
+            conn.execute("DELETE FROM draft_picks WHERE id=?", (pick_id,))
+            return dict(row)
+    return None
+
+
 def get_drafted_player_ids(league_id: str, season: int) -> set:
     with get_conn() as conn:
         rows = conn.execute(

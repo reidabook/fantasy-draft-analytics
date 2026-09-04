@@ -102,7 +102,7 @@ if df.empty:
     st.info("No VBD data yet. Click ↺ Recalc or run prefetch.py first.")
     st.stop()
 
-notes_map = {n["player_id"]: n for n in load_notes(config.league_id)}
+notes_map = load_notes(config.league_id)
 
 # Apply filters
 if pos_filter:

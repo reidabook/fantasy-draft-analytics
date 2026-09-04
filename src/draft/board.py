@@ -156,6 +156,10 @@ class DraftBoard:
         """Undo the last pick. Returns the undone pick dict, or None."""
         return cache.undo_last_pick(self.league_id, self.season)
 
+    def remove_pick(self, pick_id: int) -> Optional[dict]:
+        """Remove a specific pick (any position in the draft, not just the last one)."""
+        return cache.delete_draft_pick(self.league_id, self.season, pick_id)
+
     def reset(self) -> None:
         """Clear all draft picks for this league/season."""
         with cache.get_conn() as conn:
