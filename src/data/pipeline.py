@@ -52,8 +52,43 @@ def import_sleeper_league(username: str, log_cb: Optional[Callable] = None) -> l
 
     configs = []
     for league_data in leagues:
-        config = build_league_config_from_sleeper(league_data, user_settings={})
-        filename = f"sleeper_{config.league_id}.json"
+        league_id = league_data.get("league_id", "")
+        league_name = league_data.get("name", league_id)
+        filename = f"sleeper_{league_id}.json"
+
+        # Preserve any previously-saved/manually-edited pick position and draft_id
+        # as the fallback — Sleeper only assigns draft_order once the commissioner
+        # randomizes slots, so a brand-new or not-yet-randomized draft has none.
+        existing = load_config(filename)
+        user_settings = {
+            "my_pick_position": existing.draft.my_pick_position if existing else 6,
+            "draft_id": existing.draft.draft_id if existing else "",
+        }
+
+        try:
+            drafts = fetcher.sleeper_get_league_drafts(league_id)
+        except Exception as e:
+            drafts = []
+            log(f"  Could not fetch draft info for {league_name}: {e}", log_cb)
+
+        if drafts:
+            draft = drafts[0]
+            if draft.get("draft_id"):
+                user_settings["draft_id"] = draft["draft_id"]
+
+            draft_order = draft.get("draft_order")
+            if draft_order and user_id in draft_order:
+                user_settings["my_pick_position"] = draft_order[user_id]
+                log(f"  {league_name}: draft position #{draft_order[user_id]}", log_cb)
+            else:
+                log(
+                    f"  {league_name}: Sleeper hasn't set the draft order yet "
+                    f"(commissioner randomizes it pre-draft) — keeping pick "
+                    f"#{user_settings['my_pick_position']}; re-import once it's set",
+                    log_cb,
+                )
+
+        config = build_league_config_from_sleeper(league_data, user_settings=user_settings)
         save_config(config, filename)
         configs.append(config)
         log(f"  Saved: {config.league_name} ({config.league_id})", log_cb)
@@ -170,6 +205,47 @@ def fetch_projections(log_cb: Optional[Callable] = None) -> int:
     cache.mark_fetched("sleeper_projections")
     log(f"Cached {len(normalized)} projections", log_cb)
     return len(normalized)
+
+
+def import_fantasypros_local(
+    stats_csv_path: str,
+    bye_csv_path: Optional[str] = None,
+    log_cb: Optional[Callable] = None,
+) -> dict:
+    """
+    Ingest a locally-downloaded FantasyPros 'Draft ALL Rankings' CSV export as PPR
+    projections + ADP (source="fantasypros_local"), bypassing the live scrape in
+    fetch_adp() when FantasyPros blocks it. Matches players by name against the
+    already-cached player directory (run fetch_players()/--full first).
+
+    stats_csv_path: the stat-line export (RK, TIERS, PLAYER NAME, TEAM, FANTASYPTS, ...)
+    bye_csv_path: optional cheat-sheet export (..., BYE WEEK, UPSIDE, BUST, ...) —
+    only its name/team/bye_week columns are used, to backfill players.bye_week.
+    """
+    players = cache.get_all_players()
+    if not players:
+        raise ValueError("No players cached — run fetch_players() / prefetch.py --full first")
+    name_to_id = {p["name"].lower(): p["id"] for p in players}
+
+    log(f"Parsing local FantasyPros CSV: {stats_csv_path}", log_cb)
+    raw = fetcher.fantasypros_parse_local_csv(stats_csv_path)
+    proj_rows, adp_rows = transformer.normalize_fantasypros_local(raw, name_to_id, season=SEASON)
+
+    cache.upsert_projections(proj_rows)
+    cache.upsert_adp(adp_rows)
+    log(f"Cached {len(proj_rows)} projections and {len(adp_rows)} ADP entries (fantasypros_local)", log_cb)
+
+    result = {"projections": len(proj_rows), "adp": len(adp_rows), "bye_weeks": 0}
+
+    if bye_csv_path:
+        log(f"Parsing local FantasyPros bye-week CSV: {bye_csv_path}", log_cb)
+        bye_raw = fetcher.fantasypros_parse_local_bye_weeks_csv(bye_csv_path)
+        bye_weeks = transformer.normalize_fantasypros_bye_weeks(bye_raw, name_to_id)
+        cache.upsert_bye_weeks(bye_weeks)
+        log(f"Cached {len(bye_weeks)} bye weeks", log_cb)
+        result["bye_weeks"] = len(bye_weeks)
+
+    return result
 
 
 def fetch_adp(log_cb: Optional[Callable] = None) -> int:

@@ -25,7 +25,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from src.data.pipeline import run_quick, run_full, SEASON
+from src.data.pipeline import run_quick, run_full, import_fantasypros_local, SEASON
 from src.config.settings import list_saved_leagues, load_config
 from src.data.cache import (
     get_all_players,
@@ -124,12 +124,24 @@ def main() -> None:
         action="store_true",
         help="Bypass cache freshness checks and re-download everything",
     )
+    parser.add_argument(
+        "--local-csv",
+        metavar="PATH",
+        help="Import a locally-downloaded FantasyPros 'Draft ALL Rankings' CSV "
+             "(stat-line export) as PPR projections + ADP, bypassing the live scrape",
+    )
+    parser.add_argument(
+        "--local-bye-csv",
+        metavar="PATH",
+        help="Optional companion FantasyPros cheat-sheet CSV export (has a BYE WEEK "
+             "column) to backfill players.bye_week. Only used alongside --local-csv",
+    )
 
     args = parser.parse_args()
 
-    if not args.quick and not args.full and not args.vbd:
+    if not args.quick and not args.full and not args.vbd and not args.local_csv:
         parser.print_help()
-        print("\nError: specify at least one of --quick, --full, or --vbd")
+        print("\nError: specify at least one of --quick, --full, --vbd, or --local-csv")
         sys.exit(1)
 
     print("=" * 60)
@@ -174,10 +186,29 @@ def main() -> None:
         print(f"  Elapsed: {elapsed:.1f}s")
 
     # ---------------------------------------------------------------------------
+    # Local FantasyPros CSV import
+    # ---------------------------------------------------------------------------
+
+    if args.local_csv:
+        _log(f"Importing local FantasyPros CSV: {args.local_csv}")
+        t0 = time.time()
+        try:
+            result = import_fantasypros_local(args.local_csv, args.local_bye_csv, log_cb=_log)
+            elapsed = time.time() - t0
+            print()
+            print("Local CSV import results:")
+            for key, count in result.items():
+                print(f"  {key:<20} {count} rows")
+            print(f"  Elapsed: {elapsed:.1f}s")
+        except Exception as e:
+            print(f"  Local CSV import failed: {e}")
+            sys.exit(1)
+
+    # ---------------------------------------------------------------------------
     # VBD recompute
     # ---------------------------------------------------------------------------
 
-    if args.vbd or args.full:
+    if args.vbd or args.full or args.local_csv:
         print()
         _log("Recomputing VBD scores for all saved leagues...")
         n = recompute_all_vbd()

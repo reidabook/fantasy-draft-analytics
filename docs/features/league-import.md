@@ -15,13 +15,20 @@ for any setting that auto-import gets wrong.
 ## Sleeper Import Flow
 
 1. User enters Sleeper username in text input
-2. On submit: `import_sleeper_league(username, log_cb=logs.append)` in `src/data/fetcher.py`
+2. On submit: `import_sleeper_league(username, log_cb=logs.append)` in `src/data/pipeline.py`
    - Calls `GET /user/{username}` → gets `user_id`
    - Calls `GET /user/{user_id}/leagues/nfl/{season}` → list of leagues
-   - For each league: builds `LeagueConfig` via `build_league_config_from_sleeper()`
+   - For each league: calls `GET /league/{league_id}/drafts` and reads the first
+     draft's `draft_order` map (`{user_id: pick_slot}`) to resolve `my_pick_position`
+     and `draft_id` for that user
+   - If Sleeper hasn't randomized the draft order yet, `draft_order` is `null` —
+     the previously-saved `my_pick_position`/`draft_id` is kept (default `6`/`""`
+     for a first-time import) and a log line explains why; re-run the import once
+     the commissioner sets the order
+   - Builds `LeagueConfig` via `build_league_config_from_sleeper()`
    - Saves each to `config/sleeper_{league_id}.json`
    - Returns `List[LeagueConfig]`
-3. Success: logs show each league name + scoring type + team count
+3. Success: logs show each league name + scoring type + team count + resolved draft position
 4. Error: shown inline; most common cause is wrong username
 
 **No credentials required for Sleeper** — username only.
@@ -36,9 +43,15 @@ for any setting that auto-import gets wrong.
    - SWID cookie (format: `{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}`)
    - Inputs are `type="password"` to avoid accidental screen share exposure
 2. On submit: sets `os.environ["ESPN_LEAGUE_ID"]`, `os.environ["ESPN_S2"]`, `os.environ["ESPN_SWID"]`
-3. Calls `import_espn_league(log_cb=logs.append)` in `src/data/fetcher.py`
+3. Calls `import_espn_league(log_cb=logs.append)` in `src/data/pipeline.py`
    - Uses `espn_api.football.League(league_id, year, espn_s2, swid)`
-   - Extracts `league.settings` for scoring weights and roster slots
+   - Extracts `league.settings` for roster slots. Scoring type is derived from
+     `settings.scoring_format` — the item with stat id `53` ("Each reception")
+     gives the real per-reception point value (≥1.0 → ppr, ≥0.5 → half_ppr,
+     else standard). `espn_api`'s `Settings` object has **no** `scoring_type`
+     attribute — don't reintroduce a `getattr(settings, "scoring_type", ...)`
+     lookup, it silently returns `""` and always fell back to half_ppr regardless
+     of the league's actual scoring.
    - Builds `LeagueConfig` via `build_league_config_from_espn()`
    - Saves to `config/espn_{league_id}.json`
 4. Credentials are NOT persisted to disk — user must re-enter each session (or set in `.env`)
@@ -88,6 +101,7 @@ VBD threshold calculation (e.g., `{"QB": 10, "RB": 25, "WR": 25, "TE": 10}` for 
 | Symptom | Fix |
 |---------|-----|
 | Sleeper import: "user not found" | Check spelling — Sleeper username is case-sensitive |
+| Sleeper "My Draft Pick Position" stuck at 6 | Sleeper hasn't randomized `draft_order` yet (league still `pre_draft`) — commissioner needs to set it, then re-import |
 | ESPN import: `401 Unauthorized` | ESPN_S2 / SWID cookies have expired; re-extract from browser |
 | VBD recalc: "No player data" | Run `python prefetch.py --full` first |
 | Roster slots look wrong after import | Edit inline and click Save Changes + Recalculate VBD |

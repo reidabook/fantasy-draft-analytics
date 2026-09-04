@@ -94,6 +94,11 @@ class LeagueConfig:
     roster_slots: RosterSlots  # QB, RB, WR, TE, FLEX, K, DST, BN
     draft: DraftConfig       # total_rounds, my_pick_position, draft_id
 
+    # draft.my_pick_position / draft.draft_id are resolved from Sleeper's
+    # /league/{id}/drafts draft_order on import (build_league_config_from_sleeper);
+    # they fall back to the previously-saved value if Sleeper hasn't randomized
+    # the draft slots yet (draft_order is null pre-randomization).
+
     @property
     def replacement_rank(self) -> dict[str, int]:
         # QB: teams × QB
@@ -200,9 +205,17 @@ Requires `websockets` package. Raises ImportError with helpful message if missin
 ## Data Fetch Pipeline
 
 ```
-prefetch.py --quick    →  run_quick()   projections (24h TTL) + ADP (24h TTL)
-prefetch.py --full     →  run_full()    players (168h) + projections + ADP + nfl_metrics (168h)
-prefetch.py --vbd      →  recompute_all_vbd()   no fetch, reruns analytics only
+prefetch.py --quick                              →  run_quick()   projections (24h TTL) + ADP (24h TTL)
+prefetch.py --full                               →  run_full()    players (168h) + projections + ADP + nfl_metrics (168h)
+prefetch.py --vbd                                →  recompute_all_vbd()   no fetch, reruns analytics only
+prefetch.py --local-csv PATH [--local-bye-csv PATH] →  import_fantasypros_local()   ingest a manually-downloaded
+                                                     FantasyPros "Draft ALL Rankings" CSV as PPR projections + ADP
+                                                     (source="fantasypros_local"), for when the live scrape in
+                                                     fetch_adp() is blocked. Requires players already cached
+                                                     (run --full first). Matches by name against the player
+                                                     directory; unmatched rows (team DST entries, etc.) are logged
+                                                     and skipped. --local-bye-csv backfills players.bye_week from
+                                                     the cheat-sheet CSV variant.
 ```
 
 ADP source priority: FantasyPros → Sleeper projection ordering (if FantasyPros blocked).

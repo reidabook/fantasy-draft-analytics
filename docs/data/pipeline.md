@@ -83,7 +83,8 @@ except/empty: normalize_sleeper_adp_from_projections()  # fallback
 ```
 
 Checks `is_stale("adp", 24)`. FantasyPros scraping is fragile — fallback silently
-uses Sleeper projection ordering as proxy ADP when FantasyPros fails.
+uses Sleeper projection ordering as proxy ADP when FantasyPros fails. When it's
+blocked, `import_fantasypros_local()` (below) is the manual alternative.
 
 ### `fetch_nfl_metrics(log=None)`
 
@@ -106,6 +107,33 @@ in `flags.py` (prior-year = 2023, current-year = 2024).
 
 ---
 
+### `import_fantasypros_local(stats_csv_path, bye_csv_path=None, log_cb=None)`
+
+Ingests a manually-downloaded FantasyPros "Draft ALL Rankings" CSV export — the
+same one `fetch_adp()` would scrape live, for when that scrape is blocked. Called
+by `prefetch.py --local-csv PATH [--local-bye-csv PATH]`.
+
+```
+fantasypros_parse_local_csv(stats_csv_path)       # stat-line variant: RK, TIERS,
+                                                     PLAYER NAME, TEAM, FANTASYPTS, ...
+  → normalize_fantasypros_local(raw, name_to_id, season)
+  → (proj_rows, adp_rows)
+  → upsert_projections(proj_rows) / upsert_adp(adp_rows)   # source="fantasypros_local"
+
+if bye_csv_path:
+  fantasypros_parse_local_bye_weeks_csv(bye_csv_path)   # cheat-sheet variant: RK, TIERS,
+                                                           PLAYER NAME, TEAM, POS, BYE WEEK, ...
+    → normalize_fantasypros_bye_weeks(raw, name_to_id)
+    → upsert_bye_weeks(bye_weeks)
+```
+
+Requires the player directory already cached (`fetch_players()` / `--full` first) —
+matching is by lowercased name (+ suffix-stripping + fuzzy fallback) against
+`cache.get_all_players()`. Team-defense/kicker rows in the CSV don't match a
+named player and are logged as unmatched/skipped — expected, not an error.
+
+---
+
 ## League Import Functions
 
 ### `import_sleeper_league(username, log_cb=None)`
@@ -117,7 +145,12 @@ sleeper_get_user(username)           → user_id
 sleeper_get_leagues(user_id, SEASON) → list of league dicts
 
 for each league:
-    build_league_config_from_sleeper(league_dict)
+    sleeper_get_league_drafts(league_id) → drafts[0].draft_order, draft_id
+      # draft_order: {user_id: pick_slot}, or null if Sleeper hasn't
+      # randomized the draft yet — falls back to the previously-saved
+      # my_pick_position/draft_id (default 6/"" if none saved)
+
+    build_league_config_from_sleeper(league_dict, user_settings={my_pick_position, draft_id})
       → LeagueConfig
       → save_config(config, path="config/sleeper_{league_id}.json")
 

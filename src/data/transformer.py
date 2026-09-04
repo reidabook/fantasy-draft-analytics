@@ -225,6 +225,33 @@ def normalize_fantasypros_local(
     return proj_rows, adp_rows
 
 
+def normalize_fantasypros_bye_weeks(raw: List[dict], player_id_map: Dict[str, str]) -> Dict[str, int]:
+    """
+    Convert fetcher.fantasypros_parse_local_bye_weeks_csv() output → {player_id: bye_week},
+    ready for cache.upsert_bye_weeks(). Same name-matching strategy as normalize_fantasypros_local.
+    """
+    suffix_stripped_map = {_strip_suffix(k): v for k, v in player_id_map.items()}
+
+    bye_weeks: Dict[str, int] = {}
+    unmatched = []
+    for p in raw:
+        name_key = p["name"].lower()
+        player_id = (
+            player_id_map.get(name_key)
+            or suffix_stripped_map.get(_strip_suffix(name_key))
+            or _fuzzy_lookup(name_key, player_id_map)
+        )
+        if not player_id:
+            unmatched.append(p["name"])
+            continue
+        bye_weeks[player_id] = p["bye_week"]
+
+    if unmatched:
+        print(f"  fantasypros_bye_weeks: {len(unmatched)} unmatched names (skipped): {unmatched[:10]}{'...' if len(unmatched) > 10 else ''}")
+
+    return bye_weeks
+
+
 # ---------------------------------------------------------------------------
 # ESPN player pool normalization
 # ---------------------------------------------------------------------------

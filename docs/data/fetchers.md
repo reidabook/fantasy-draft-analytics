@@ -121,6 +121,17 @@ JSON parse fail). Caller (`fetch_adp()`) detects empty list and falls back to Sl
 `normalize_sleeper_adp_from_projections()` — converts Sleeper projection ranking order
 into a proxy ADP. Less accurate than FantasyPros but always available.
 
+### Local CSV Fallback (manual)
+
+When the live scrape above is blocked, download FantasyPros' "Draft ALL Rankings"
+CSV export by hand and feed it to `prefetch.py --local-csv PATH [--local-bye-csv PATH]`
+(see `import_fantasypros_local()` in `docs/data/pipeline.md`). Two CSV variants:
+
+| Function | CSV columns | Used for |
+|----------|-------------|----------|
+| `fantasypros_parse_local_csv(path)` | RK, TIERS, PLAYER NAME, TEAM, FANTASYPTS, pass/rush/rec stat lines | Projections + ADP (rank order) |
+| `fantasypros_parse_local_bye_weeks_csv(path)` | RK, TIERS, PLAYER NAME, TEAM, POS, BYE WEEK, UPSIDE, BUST, SOS SEASON, ECR VS. ADP | `players.bye_week` backfill |
+
 ---
 
 ## nfl_data_py

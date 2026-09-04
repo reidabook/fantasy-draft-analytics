@@ -53,6 +53,7 @@ class DraftConfig:
     type: str = "snake"
     total_rounds: int = 15
     my_pick_position: int = 6
+    draft_id: str = ""
 
 
 @dataclass
@@ -213,6 +214,7 @@ def build_league_config_from_sleeper(league_data: dict, user_settings: dict) -> 
             type="snake",
             total_rounds=total_rounds,
             my_pick_position=user_settings.get("my_pick_position", 6),
+            draft_id=user_settings.get("draft_id", ""),
         ),
     )
 
@@ -223,12 +225,23 @@ def build_league_config_from_espn(espn_league, user_settings: dict) -> LeagueCon
     espn_league: espn_api.football.League instance
     """
     settings = espn_league.settings
-    scoring_settings = getattr(settings, "scoring_type", "")
 
-    # espn-api scoring type is a string: "PPR", "HALF_PPR", "STANDARD"
-    scoring_type_map = {"PPR": "ppr", "HALF_PPR": "half_ppr", "STANDARD": "standard"}
-    scoring_type = scoring_type_map.get(scoring_settings.upper(), "half_ppr")
-    rec_pts = {"ppr": 1.0, "half_ppr": 0.5, "standard": 0.0}[scoring_type]
+    # espn_api.football.Settings has no top-level "scoring_type" attribute (that
+    # was always a silent no-op fallback to half_ppr, regardless of the league's
+    # actual scoring) — the real reception value lives in scoring_format, keyed
+    # by stat id 53 ("REC" / "Each reception").
+    rec_pts = 0.0
+    for item in getattr(settings, "scoring_format", []):
+        if item.get("id") == 53 or item.get("abbr") == "REC":
+            rec_pts = float(item.get("points", 0.0) or 0.0)
+            break
+
+    if rec_pts >= 1.0:
+        scoring_type = "ppr"
+    elif rec_pts >= 0.5:
+        scoring_type = "half_ppr"
+    else:
+        scoring_type = "standard"
 
     roster_map = getattr(settings, "position_slot_counts", {})
 

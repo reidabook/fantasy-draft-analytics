@@ -1,0 +1,36 @@
+{
+  "league_id": "1394722854288764928",
+  "league_name": "Backyard League",
+  "platform": "sleeper",
+  "season": 2026,
+  "teams": 12,
+  "scoring": {
+    "type": "ppr",
+    "reception": 1.0,
+    "passing_yard": 0.04,
+    "rushing_yard": 0.1,
+    "receiving_yard": 0.1,
+    "pass_td": 4.0,
+    "rush_td": 6.0,
+    "rec_td": 6.0,
+    "two_point_conversion": 2.0,
+    "fumble_lost": -2.0,
+    "interception": 2.0
+  },
+  "roster_slots": {
+    "QB": 1,
+    "RB": 2,
+    "WR": 3,
+    "TE": 1,
+    "FLEX": 1,
+    "K": 1,
+    "DST": 1,
+    "BN": 6
+  },
+  "draft": {
+    "type": "snake",
+    "total_rounds": 16,
+    "my_pick_position": 2,
+    "draft_id": "1394722855077298176"
+  }
+}
