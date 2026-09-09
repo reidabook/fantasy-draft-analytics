@@ -147,9 +147,9 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    if not args.quick and not args.full and not args.vbd and not args.local_csv:
+    if not args.quick and not args.full and not args.vbd and not args.local_csv and not args.local_bye_csv:
         parser.print_help()
-        print("\nError: specify at least one of --quick, --full, --vbd, or --local-csv")
+        print("\nError: specify at least one of --quick, --full, --vbd, --local-csv, or --local-bye-csv")
         sys.exit(1)
 
     print("=" * 60)
@@ -197,8 +197,8 @@ def main() -> None:
     # Local FantasyPros CSV import
     # ---------------------------------------------------------------------------
 
-    if args.local_csv:
-        _log(f"Importing local FantasyPros CSV: {args.local_csv}")
+    if args.local_csv or args.local_bye_csv:
+        _log(f"Importing local FantasyPros CSV(s)...")
         t0 = time.time()
         try:
             result = import_fantasypros_local(args.local_csv, args.local_bye_csv, log_cb=_log)
@@ -216,7 +216,7 @@ def main() -> None:
     # VBD recompute
     # ---------------------------------------------------------------------------
 
-    if args.vbd or args.full or args.local_csv:
+    if args.vbd or args.full or args.local_csv or args.local_bye_csv:
         print()
         _log("Recomputing VBD scores for all saved leagues...")
         n = recompute_all_vbd()

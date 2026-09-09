@@ -212,34 +212,43 @@ def fetch_projections(log_cb: Optional[Callable] = None) -> int:
 
 
 def import_fantasypros_local(
-    stats_csv_path: str,
+    stats_csv_path: Optional[str] = None,
     bye_csv_path: Optional[str] = None,
     log_cb: Optional[Callable] = None,
 ) -> dict:
     """
-    Ingest a locally-downloaded FantasyPros 'Draft ALL Rankings' CSV export as PPR
-    projections + ADP (source="fantasypros_local"), bypassing the live scrape in
-    fetch_adp() when FantasyPros blocks it. Matches players by name against the
-    already-cached player directory (run fetch_players()/--full first).
+    Ingest locally-downloaded FantasyPros 'Draft ALL Rankings' CSV export(s):
+    stats_csv_path as PPR projections + ADP (source="fantasypros_local"),
+    bypassing the live scrape in fetch_adp() when FantasyPros blocks it, and/or
+    bye_csv_path as a players.bye_week backfill. Either may be omitted to
+    update just the other (e.g. a bye-week refresh alone). At least one is
+    required. Matches players by name against the already-cached player
+    directory (run fetch_players()/--full first).
 
     stats_csv_path: the stat-line export (RK, TIERS, PLAYER NAME, TEAM, FANTASYPTS, ...)
-    bye_csv_path: optional cheat-sheet export (..., BYE WEEK, UPSIDE, BUST, ...) —
-    only its name/team/bye_week columns are used, to backfill players.bye_week.
+    bye_csv_path: the cheat-sheet export (..., BYE WEEK, UPSIDE, BUST, ...) —
+    only its name/team/bye_week columns are used.
     """
+    if not stats_csv_path and not bye_csv_path:
+        raise ValueError("Provide at least one of stats_csv_path or bye_csv_path")
+
     players = cache.get_all_players()
     if not players:
         raise ValueError("No players cached — run fetch_players() / prefetch.py --full first")
     name_to_id = {p["name"].lower(): p["id"] for p in players}
 
-    log(f"Parsing local FantasyPros CSV: {stats_csv_path}", log_cb)
-    raw = fetcher.fantasypros_parse_local_csv(stats_csv_path)
-    proj_rows, adp_rows = transformer.normalize_fantasypros_local(raw, name_to_id, season=SEASON)
+    result = {"projections": 0, "adp": 0, "bye_weeks": 0}
 
-    cache.upsert_projections(proj_rows)
-    cache.upsert_adp(adp_rows)
-    log(f"Cached {len(proj_rows)} projections and {len(adp_rows)} ADP entries (fantasypros_local)", log_cb)
+    if stats_csv_path:
+        log(f"Parsing local FantasyPros CSV: {stats_csv_path}", log_cb)
+        raw = fetcher.fantasypros_parse_local_csv(stats_csv_path)
+        proj_rows, adp_rows = transformer.normalize_fantasypros_local(raw, name_to_id, season=SEASON)
 
-    result = {"projections": len(proj_rows), "adp": len(adp_rows), "bye_weeks": 0}
+        cache.upsert_projections(proj_rows)
+        cache.upsert_adp(adp_rows)
+        log(f"Cached {len(proj_rows)} projections and {len(adp_rows)} ADP entries (fantasypros_local)", log_cb)
+        result["projections"] = len(proj_rows)
+        result["adp"] = len(adp_rows)
 
     if bye_csv_path:
         log(f"Parsing local FantasyPros bye-week CSV: {bye_csv_path}", log_cb)
