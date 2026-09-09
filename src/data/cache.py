@@ -291,7 +291,22 @@ def get_all_players(positions: Optional[List[str]] = None, platform: Optional[st
 # ---------------------------------------------------------------------------
 
 def upsert_projections(projections: List[Dict[str, Any]]) -> None:
+    """
+    Each call is a FULL batch for its (season, week, source) — e.g. one
+    fantasypros_local import, or one Sleeper season fetch — never incremental,
+    so stale rows for that key are deleted first. Without this, a player_id
+    matched by an earlier import but absent from a later one (a name-matching
+    miss, or simply dropped from the newer rankings) keeps its old row
+    forever — e.g. players from a since-replaced half-PPR-formatted export
+    lingering under source="fantasypros_local" long after every PPR
+    re-import, never overwritten because they just never come up again.
+    """
+    keys = {(p["season"], p["week"], p["source"]) for p in projections}
     with get_conn() as conn:
+        conn.executemany(
+            "DELETE FROM projections WHERE season=? AND week=? AND source=?",
+            list(keys),
+        )
         conn.executemany(
             """
             INSERT OR REPLACE INTO projections
@@ -364,7 +379,13 @@ def get_advanced_metrics(season: int) -> List[dict]:
 # ---------------------------------------------------------------------------
 
 def upsert_adp(adp_rows: List[Dict[str, Any]]) -> None:
+    """Full-batch replace per (season, source) — see upsert_projections() for why."""
+    keys = {(a["season"], a["source"]) for a in adp_rows}
     with get_conn() as conn:
+        conn.executemany(
+            "DELETE FROM adp WHERE season=? AND source=?",
+            list(keys),
+        )
         conn.executemany(
             """
             INSERT OR REPLACE INTO adp
@@ -420,6 +441,12 @@ def upsert_vbd_scores(vbd_rows: List[Dict[str, Any]]) -> None:
 
 
 def get_vbd_scores(league_id: str, season: int, scoring_type: str) -> List[dict]:
+    # Real/market-consensus sources before auto-generated proxy fallbacks (see
+    # docs/data/pipeline.md "ADP source priority") — mirrors
+    # analytics/vbd.py's _SOURCE_PRIORITY. A plain MIN(adp_overall) across
+    # sources is a bug: a stale sleeper_proxy row can numerically beat a
+    # correct, freshly-imported fantasypros_local row for the same player,
+    # showing the wrong ADP even though the right data is sitting right there.
     with get_conn() as conn:
         rows = conn.execute(
             """
@@ -428,9 +455,22 @@ def get_vbd_scores(league_id: str, season: int, scoring_type: str) -> List[dict]
             FROM vbd_scores v
             JOIN players p ON v.player_id = p.id
             LEFT JOIN (
-                SELECT player_id, MIN(adp_overall) AS adp_overall
-                FROM adp WHERE season=?
-                GROUP BY player_id
+                SELECT player_id, adp_overall FROM (
+                    SELECT player_id, adp_overall,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY player_id
+                               ORDER BY CASE source
+                                   WHEN 'fantasypros_local' THEN 0
+                                   WHEN 'fantasypros' THEN 1
+                                   WHEN 'espn' THEN 1
+                                   WHEN 'espn_proxy' THEN 2
+                                   WHEN 'sleeper' THEN 2
+                                   WHEN 'sleeper_proxy' THEN 3
+                                   ELSE 99
+                               END
+                           ) AS rn
+                    FROM adp WHERE season=?
+                ) WHERE rn = 1
             ) a ON a.player_id = v.player_id
             WHERE v.league_id=? AND v.season=? AND v.scoring_type=?
             ORDER BY v.overall_rank ASC

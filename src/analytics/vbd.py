@@ -12,6 +12,30 @@ import pandas as pd
 
 from src.config.settings import LeagueConfig
 
+# Real/market-consensus sources before auto-generated proxy fallbacks — see
+# docs/data/pipeline.md "ADP source priority". Taking max()/min() across
+# sources instead of this priority is a real bug: whichever source happens to
+# have the numerically larger (for points) or smaller (for ADP) value wins by
+# coincidence rather than because it's more trustworthy, silently discarding
+# a freshly-imported fantasypros_local number in favor of a stale sleeper_proxy
+# one whenever the stale one happens to look "better".
+_SOURCE_PRIORITY = {
+    "fantasypros_local": 0,
+    "fantasypros": 1,
+    "espn": 1,
+    "espn_proxy": 2,
+    "sleeper": 2,
+    "sleeper_proxy": 3,
+}
+
+
+def _pick_best_by_source(df: pd.DataFrame, group_col: str, value_col: str) -> pd.DataFrame:
+    """Within each group_col, keep the row whose 'source' ranks best in _SOURCE_PRIORITY."""
+    ranked = df.copy()
+    ranked["_source_rank"] = ranked["source"].map(_SOURCE_PRIORITY).fillna(99)
+    ranked = ranked.sort_values("_source_rank").drop_duplicates(subset=[group_col], keep="first")
+    return ranked[[group_col, value_col]].reset_index(drop=True)
+
 
 def compute_vbd(
     players: List[dict],
@@ -50,12 +74,9 @@ def compute_vbd(
         scoring_type, "pts_ppr"
     )
 
-    # Take the best (highest) projection if multiple sources
-    proj_best = (
-        proj_df.groupby("player_id")[pts_col]
-        .max()
-        .reset_index()
-        .rename(columns={pts_col: "projected_pts"})
+    # Take the highest-priority source's projection when multiple exist
+    proj_best = _pick_best_by_source(proj_df, "player_id", pts_col).rename(
+        columns={pts_col: "projected_pts"}
     )
 
     # Merge players ← projections ← ADP
@@ -63,7 +84,7 @@ def compute_vbd(
     df["projected_pts"] = df["projected_pts"].fillna(0.0)
 
     if not adp_df.empty:
-        adp_best = adp_df.groupby("player_id")["adp_overall"].min().reset_index()
+        adp_best = _pick_best_by_source(adp_df, "player_id", "adp_overall")
         df = df.merge(adp_best, left_on="id", right_on="player_id", how="left")
         df["adp_overall"] = df["adp_overall"].fillna(999.0)
     else:
