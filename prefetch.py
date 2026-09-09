@@ -51,11 +51,18 @@ def recompute_all_vbd() -> int:
         print("  No saved leagues found. Import a league in the app first.")
         return 0
 
-    players = get_all_players(positions=["QB", "RB", "WR", "TE"])
+    # players table is shared across all leagues/platforms, and Sleeper vs
+    # ESPN entries for the same real athlete are never cross-linked/deduped —
+    # cached per-platform here so each league's board only sees its own
+    # platform's ids instead of every player showing up twice.
+    players_by_platform = {
+        "sleeper": get_all_players(positions=["QB", "RB", "WR", "TE"], platform="sleeper"),
+        "espn": get_all_players(positions=["QB", "RB", "WR", "TE"], platform="espn"),
+    }
     projs = get_projections(season=SEASON, week=0)
     adp = get_adp(season=SEASON)
 
-    if not players:
+    if not any(players_by_platform.values()):
         print("  No player data. Run --full first to populate the player directory.")
         return 0
     if not projs:
@@ -69,6 +76,7 @@ def recompute_all_vbd() -> int:
             print(f"  Skipping {filename} (failed to load)")
             continue
 
+        players = players_by_platform.get(config.platform, players_by_platform["sleeper"])
         notes = get_all_player_notes(config.league_id)
         try:
             vbd_df = compute_vbd(players, projs, adp, config, notes)

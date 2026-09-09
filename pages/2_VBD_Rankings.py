@@ -45,7 +45,7 @@ def load_notes(league_id: str):
 
 def refresh_vbd():
     """Recompute VBD from raw data and write to DB."""
-    players = get_all_players(positions=["QB", "RB", "WR", "TE"])
+    players = get_all_players(positions=["QB", "RB", "WR", "TE"], platform=config.platform)
     projs = get_projections(season=config.season, week=0)
     adp = get_adp(season=config.season)
     notes = load_notes(config.league_id)

@@ -257,15 +257,32 @@ def upsert_bye_weeks(bye_weeks: Dict[str, int]) -> None:
         )
 
 
-def get_all_players(positions: Optional[List[str]] = None) -> List[dict]:
+def get_all_players(positions: Optional[List[str]] = None, platform: Optional[str] = None) -> List[dict]:
+    """
+    platform: when given, filters to one source's player directory. The
+    `players` table is shared across all leagues regardless of platform, and
+    Sleeper (numeric id) and ESPN (id="espn_{espn_id}") entries for the same
+    real athlete are never cross-linked/deduped — including both in one
+    league's VBD board shows every player twice. "sleeper" excludes espn_*
+    ids; "espn" includes only espn_* ids.
+    """
+    clauses = []
+    params: list = []
+    if positions:
+        placeholders = ",".join("?" * len(positions))
+        clauses.append(f"position IN ({placeholders})")
+        params.extend(positions)
+    if platform == "sleeper":
+        clauses.append("id NOT LIKE 'espn\\_%' ESCAPE '\\'")
+    elif platform == "espn":
+        clauses.append("id LIKE 'espn\\_%' ESCAPE '\\'")
+
+    query = "SELECT * FROM players"
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+
     with get_conn() as conn:
-        if positions:
-            placeholders = ",".join("?" * len(positions))
-            rows = conn.execute(
-                f"SELECT * FROM players WHERE position IN ({placeholders})", positions
-            ).fetchall()
-        else:
-            rows = conn.execute("SELECT * FROM players").fetchall()
+        rows = conn.execute(query, params).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -375,7 +392,20 @@ def get_adp(season: int, source: Optional[str] = None) -> List[dict]:
 # ---------------------------------------------------------------------------
 
 def upsert_vbd_scores(vbd_rows: List[Dict[str, Any]]) -> None:
+    """
+    Each call recomputes the FULL board for one (league_id, season,
+    scoring_type) from the current player pool — never incremental — so
+    stale rows for that key are deleted first. Without this, a player_id
+    dropped from a later recompute (e.g. after the Sleeper/ESPN platform
+    filter fix) would linger forever as a duplicate row alongside the
+    player's current, correctly-filtered entry.
+    """
+    keys = {(v["league_id"], v["season"], v["scoring_type"]) for v in vbd_rows}
     with get_conn() as conn:
+        conn.executemany(
+            "DELETE FROM vbd_scores WHERE league_id=? AND season=? AND scoring_type=?",
+            list(keys),
+        )
         conn.executemany(
             """
             INSERT OR REPLACE INTO vbd_scores

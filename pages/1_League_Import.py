@@ -171,7 +171,7 @@ else:
             # Recalculate VBD with new settings
             from src.data.cache import get_all_players, get_projections, get_adp, upsert_vbd_scores, get_all_player_notes
             from src.analytics.vbd import compute_vbd, vbd_to_db_rows
-            players = get_all_players(positions=["QB", "RB", "WR", "TE"])
+            players = get_all_players(positions=["QB", "RB", "WR", "TE"], platform=config.platform)
             projs = get_projections(season=config.season, week=0)
             adp = get_adp(season=config.season)
             notes = get_all_player_notes(config.league_id)
