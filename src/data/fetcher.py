@@ -227,6 +227,7 @@ def fantasypros_parse_local_csv(path: str) -> List[dict]:
                 "tier": int(r[1]),
                 "name": r[2],
                 "team": r[3],
+                "fantasy_pts": float(r[4] or 0),
                 "pass_yd": float(r[5] or 0),
                 "pass_td": float(r[6] or 0),
                 "rec": float(r[7] or 0),

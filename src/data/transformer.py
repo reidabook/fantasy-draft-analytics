@@ -167,6 +167,15 @@ def normalize_fantasypros_local(
     (0.04/pass-yd, 0.1/rush-yd, 0.1/rec-yd, 4/pass-td, 6/rush-td, 6/rec-td), which
     matches this league's actual scoring exactly except for reception value.
     Unmatched names are skipped rather than guessed at.
+
+    QBs are the exception: this CSV export has no interception/fumble columns,
+    so recomputing from the raw stat line silently drops turnover penalties —
+    a ~9-point average (up to 22) undercount of how bad that is became visible
+    comparing the recompute against FantasyPros' own published FANTASYPTS
+    total for the same row. Since reception value never applies to a QB's
+    score anyway, QBs use FantasyPros' own total directly (all three
+    scoring-type columns get the same value, same as normalize_espn_projections
+    does when PPR doesn't affect the number) instead of the partial recompute.
     """
     suffix_stripped_map = {
         _strip_suffix(k): v for k, v in player_id_map.items()
@@ -191,9 +200,13 @@ def normalize_fantasypros_local(
             "rush_yd": p["rush_yd"], "rush_td": p["rush_td"],
             "rec": p["rec"], "rec_yd": p["rec_yd"], "rec_td": p["rec_td"],
         }
-        pts_ppr = round(_compute_pts(stats, rec_pts=1.0), 2)
-        pts_half = round(_compute_pts(stats, rec_pts=0.5), 2)
-        pts_std = round(_compute_pts(stats, rec_pts=0.0), 2)
+        is_qb = p["pass_yd"] > 0
+        if is_qb:
+            pts_ppr = pts_half = pts_std = round(p.get("fantasy_pts", 0.0), 2)
+        else:
+            pts_ppr = round(_compute_pts(stats, rec_pts=1.0), 2)
+            pts_half = round(_compute_pts(stats, rec_pts=0.5), 2)
+            pts_std = round(_compute_pts(stats, rec_pts=0.0), 2)
         if pts_ppr == 0 and pts_half == 0 and pts_std == 0:
             continue
 
