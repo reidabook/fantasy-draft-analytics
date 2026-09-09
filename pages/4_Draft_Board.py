@@ -253,168 +253,163 @@ with sleeper_col:
 st.markdown("---")
 
 # ---------------------------------------------------------------------------
-# Main layout: available players (left) | my team (right)
+# Available players (full width)
 # ---------------------------------------------------------------------------
 
-left_col, right_col = st.columns([3, 2])
 
-# ---------------------------------------------------------------------------
-# LEFT: Available players
-# ---------------------------------------------------------------------------
+st.subheader("Available Players")
+st.markdown(
+    "<div style='color:#6b7280;font-size:0.85em;margin-bottom:4px'>"
+    "🟢 Sleeper &nbsp;·&nbsp; 🔴 Bust risk &nbsp;·&nbsp; 🤝 Handcuff &nbsp;&nbsp;|&nbsp;&nbsp; "
+    "Gap: <span style='color:#4ade80'>green</span> = value vs ADP, "
+    "<span style='color:#f87171'>red</span> = reach vs ADP"
+    "</div>",
+    unsafe_allow_html=True,
+)
 
-with left_col:
-    st.subheader("Available Players")
-    st.markdown(
-        "<div style='color:#6b7280;font-size:0.85em;margin-bottom:4px'>"
-        "🟢 Sleeper &nbsp;·&nbsp; 🔴 Bust risk &nbsp;·&nbsp; 🤝 Handcuff &nbsp;&nbsp;|&nbsp;&nbsp; "
-        "Gap: <span style='color:#4ade80'>green</span> = value vs ADP, "
-        "<span style='color:#f87171'>red</span> = reach vs ADP"
-        "</div>",
-        unsafe_allow_html=True,
+# Filters
+fc1, fc2, fc3, fc4 = st.columns([2, 3, 1, 1])
+with fc1:
+    pos_filter = st.multiselect(
+        "Position",
+        options=["QB", "RB", "WR", "TE"],
+        default=["QB", "RB", "WR", "TE"],
+        label_visibility="collapsed",
     )
+with fc2:
+    name_filter = st.text_input("Search", placeholder="Player name...", label_visibility="collapsed")
+with fc3:
+    sleeper_only = st.checkbox("🟢 Sleepers", help="Show only SLEEPER-flagged players")
+with fc4:
+    handcuff_only = st.checkbox("🤝 Handcuffs", help="Show only HC-flagged players")
 
-    # Filters
-    fc1, fc2, fc3, fc4 = st.columns([2, 3, 1, 1])
-    with fc1:
-        pos_filter = st.multiselect(
-            "Position",
-            options=["QB", "RB", "WR", "TE"],
-            default=["QB", "RB", "WR", "TE"],
-            label_visibility="collapsed",
+disp_df = available_df.copy()
+if pos_filter:
+    disp_df = disp_df[disp_df["position"].isin(pos_filter)]
+if name_filter:
+    disp_df = disp_df[disp_df["name"].str.contains(name_filter, case=False, na=False)]
+if sleeper_only and "is_sleeper" in disp_df.columns:
+    disp_df = disp_df[disp_df["is_sleeper"] == True]
+if handcuff_only and "is_handcuff" in disp_df.columns:
+    disp_df = disp_df[disp_df["is_handcuff"] == True]
+
+if disp_df.empty:
+    st.info("No players match filter.")
+else:
+    pid_col = "id" if "id" in disp_df.columns else "player_id"
+
+    # Table header
+    th = st.columns([0.5, 2.0, 0.6, 0.5, 0.7, 0.6, 0.8, 0.8, 0.9, 1.5])
+    for col, lbl in zip(th, ["Rank", "Name", "Pos", "Tier", "Team", "Bye", "VBD", "ADP", "Gap", "Action"]):
+        col.markdown(f"<span style='color:#6b7280;font-size:0.8em'>{lbl}</span>", unsafe_allow_html=True)
+
+    POS_COLOR = {"QB": "#FF6B6B", "RB": "#4ECDC4", "WR": "#45B7D1", "TE": "#96CEB4"}
+
+    for _, row in disp_df.head(60).iterrows():
+        pid = str(row.get(pid_col, ""))
+        pos = row.get("position", "")
+        color = POS_COLOR.get(pos, "#888")
+        adp_gap = row.get("adp_gap", 0) or 0
+        gap_color = "#4ade80" if adp_gap >= 5 else ("#f87171" if adp_gap <= -5 else "#9ca3af")
+        adp_val = row.get("adp_overall")
+        adp_str = f"{adp_val:.0f}" if adp_val and adp_val < 999 else "—"
+        bye_val = row.get("bye_week")
+        bye_str = f"{int(bye_val)}" if pd.notna(bye_val) else "—"
+        flag = str(row.get("flag_summary", ""))
+        flag_icons = []
+        if "SLEEPER" in flag:
+            flag_icons.append("🟢")
+        if "BUST" in flag:
+            flag_icons.append("🔴")
+        if "HC" in flag:
+            flag_icons.append("🤝")
+        flag_icon = "".join(flag_icons)
+
+        tier_val = row.get("tier")
+        tier_str = f"{int(tier_val)}" if pd.notna(tier_val) else "—"
+
+        tc = st.columns([0.5, 2.0, 0.6, 0.5, 0.7, 0.6, 0.8, 0.8, 0.9, 1.5])
+        tc[0].markdown(f"<span style='font-size:0.85em;color:#9ca3af'>{int(row.get('overall_rank',0))}</span>", unsafe_allow_html=True)
+        tc[1].markdown(
+            f"<span style='color:{color};font-weight:600;font-size:0.9em'>{row.get('name','')} {flag_icon}</span>",
+            unsafe_allow_html=True,
         )
-    with fc2:
-        name_filter = st.text_input("Search", placeholder="Player name...", label_visibility="collapsed")
-    with fc3:
-        sleeper_only = st.checkbox("🟢 Sleepers", help="Show only SLEEPER-flagged players")
-    with fc4:
-        handcuff_only = st.checkbox("🤝 Handcuffs", help="Show only HC-flagged players")
+        tc[2].markdown(f"<span style='color:{color};font-size:0.85em;font-weight:700'>{pos}</span>", unsafe_allow_html=True)
+        tc[3].markdown(f"<span style='font-size:0.85em;color:#9ca3af'>{tier_str}</span>", unsafe_allow_html=True)
+        tc[4].markdown(f"<span style='font-size:0.85em;color:#9ca3af'>{row.get('team','')}</span>", unsafe_allow_html=True)
+        tc[5].markdown(f"<span style='font-size:0.85em;color:#9ca3af'>{bye_str}</span>", unsafe_allow_html=True)
+        tc[6].markdown(f"<span style='font-size:0.85em'>{row.get('vbd_surplus',0):.1f}</span>", unsafe_allow_html=True)
+        tc[7].markdown(f"<span style='font-size:0.85em;color:#9ca3af'>{adp_str}</span>", unsafe_allow_html=True)
+        tc[8].markdown(
+            f"<span style='font-size:0.85em;color:{gap_color};font-weight:600'>"
+            f"{'+' if adp_gap > 0 else ''}{adp_gap:.0f}</span>",
+            unsafe_allow_html=True,
+        )
 
-    disp_df = available_df.copy()
-    if pos_filter:
-        disp_df = disp_df[disp_df["position"].isin(pos_filter)]
-    if name_filter:
-        disp_df = disp_df[disp_df["name"].str.contains(name_filter, case=False, na=False)]
-    if sleeper_only and "is_sleeper" in disp_df.columns:
-        disp_df = disp_df[disp_df["is_sleeper"] == True]
-    if handcuff_only and "is_handcuff" in disp_df.columns:
-        disp_df = disp_df[disp_df["is_handcuff"] == True]
+        # Draft buttons
+        btn_col1, btn_col2 = tc[9].columns(2)
+        if btn_col1.button("Mine", key=f"mine_{pid}", help="Draft to my team"):
+            board.mark_pick(pid, team_number=config.draft.my_pick_position)
+            load_vbd_df.clear()
+            st.rerun()
+        if btn_col2.button("Other", key=f"other_{pid}", help="Draft to another team"):
+            # team_number=0 is a sentinel meaning "not me, unspecified team" -
+            # never equals a real 1..n_teams slot, so this can never be
+            # mistaken for my pick even if snake-slot math or config drifts.
+            board.mark_pick(pid, team_number=0)
+            load_vbd_df.clear()
+            st.rerun()
 
-    if disp_df.empty:
-        st.info("No players match filter.")
-    else:
-        pid_col = "id" if "id" in disp_df.columns else "player_id"
-
-        # Table header
-        th = st.columns([0.5, 2.0, 0.6, 0.5, 0.7, 0.6, 0.8, 0.8, 0.9, 1.5])
-        for col, lbl in zip(th, ["Rank", "Name", "Pos", "Tier", "Team", "Bye", "VBD", "ADP", "Gap", "Action"]):
-            col.markdown(f"<span style='color:#6b7280;font-size:0.8em'>{lbl}</span>", unsafe_allow_html=True)
-
-        POS_COLOR = {"QB": "#FF6B6B", "RB": "#4ECDC4", "WR": "#45B7D1", "TE": "#96CEB4"}
-
-        for _, row in disp_df.head(60).iterrows():
-            pid = str(row.get(pid_col, ""))
-            pos = row.get("position", "")
-            color = POS_COLOR.get(pos, "#888")
-            adp_gap = row.get("adp_gap", 0) or 0
-            gap_color = "#4ade80" if adp_gap >= 5 else ("#f87171" if adp_gap <= -5 else "#9ca3af")
-            adp_val = row.get("adp_overall")
-            adp_str = f"{adp_val:.0f}" if adp_val and adp_val < 999 else "—"
-            bye_val = row.get("bye_week")
-            bye_str = f"{int(bye_val)}" if pd.notna(bye_val) else "—"
-            flag = str(row.get("flag_summary", ""))
-            flag_icons = []
-            if "SLEEPER" in flag:
-                flag_icons.append("🟢")
-            if "BUST" in flag:
-                flag_icons.append("🔴")
-            if "HC" in flag:
-                flag_icons.append("🤝")
-            flag_icon = "".join(flag_icons)
-
-            tier_val = row.get("tier")
-            tier_str = f"{int(tier_val)}" if pd.notna(tier_val) else "—"
-
-            tc = st.columns([0.5, 2.0, 0.6, 0.5, 0.7, 0.6, 0.8, 0.8, 0.9, 1.5])
-            tc[0].markdown(f"<span style='font-size:0.85em;color:#9ca3af'>{int(row.get('overall_rank',0))}</span>", unsafe_allow_html=True)
-            tc[1].markdown(
-                f"<span style='color:{color};font-weight:600;font-size:0.9em'>{row.get('name','')} {flag_icon}</span>",
-                unsafe_allow_html=True,
-            )
-            tc[2].markdown(f"<span style='color:{color};font-size:0.85em;font-weight:700'>{pos}</span>", unsafe_allow_html=True)
-            tc[3].markdown(f"<span style='font-size:0.85em;color:#9ca3af'>{tier_str}</span>", unsafe_allow_html=True)
-            tc[4].markdown(f"<span style='font-size:0.85em;color:#9ca3af'>{row.get('team','')}</span>", unsafe_allow_html=True)
-            tc[5].markdown(f"<span style='font-size:0.85em;color:#9ca3af'>{bye_str}</span>", unsafe_allow_html=True)
-            tc[6].markdown(f"<span style='font-size:0.85em'>{row.get('vbd_surplus',0):.1f}</span>", unsafe_allow_html=True)
-            tc[7].markdown(f"<span style='font-size:0.85em;color:#9ca3af'>{adp_str}</span>", unsafe_allow_html=True)
-            tc[8].markdown(
-                f"<span style='font-size:0.85em;color:{gap_color};font-weight:600'>"
-                f"{'+' if adp_gap > 0 else ''}{adp_gap:.0f}</span>",
-                unsafe_allow_html=True,
-            )
-
-            # Draft buttons
-            btn_col1, btn_col2 = tc[9].columns(2)
-            if btn_col1.button("Mine", key=f"mine_{pid}", help="Draft to my team"):
-                board.mark_pick(pid, team_number=config.draft.my_pick_position)
-                load_vbd_df.clear()
-                st.rerun()
-            if btn_col2.button("Other", key=f"other_{pid}", help="Draft to another team"):
-                # team_number=0 is a sentinel meaning "not me, unspecified team" -
-                # never equals a real 1..n_teams slot, so this can never be
-                # mistaken for my pick even if snake-slot math or config drifts.
-                board.mark_pick(pid, team_number=0)
-                load_vbd_df.clear()
-                st.rerun()
+st.markdown("---")
 
 # ---------------------------------------------------------------------------
-# RIGHT: My team + controls
+# My Team (full width)
 # ---------------------------------------------------------------------------
 
-with right_col:
-    st.subheader("My Team")
+st.subheader("My Team")
 
-    my_roster = board.get_my_roster()
+my_roster = board.get_my_roster()
 
-    if not my_roster:
-        st.info("No picks yet. Start drafting!")
-    else:
-        SLOT_ORDER = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "K", "DST", "BN"]
-        POS_COLOR = {"QB": "#FF6B6B", "RB": "#4ECDC4", "WR": "#45B7D1", "TE": "#96CEB4", "K": "#FBBF24", "DST": "#A78BFA"}
+if not my_roster:
+    st.info("No picks yet. Start drafting!")
+else:
+    SLOT_ORDER = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "K", "DST", "BN"]
+    POS_COLOR = {"QB": "#FF6B6B", "RB": "#4ECDC4", "WR": "#45B7D1", "TE": "#96CEB4", "K": "#FBBF24", "DST": "#A78BFA"}
 
-        # Bye-week stacking: flag any week where 2+ starters (non-K/DST) share a bye
-        bye_counts: dict = {}
-        for pick in my_roster:
-            wk = pick.get("bye_week")
-            pos = pick.get("position", "?")
-            if wk and pos not in ("K", "DST"):
-                bye_counts[wk] = bye_counts.get(wk, 0) + 1
-        stacked_byes = {wk: n for wk, n in bye_counts.items() if n >= 2}
-        if stacked_byes:
-            parts = ", ".join(f"Week {wk} ({n} players)" for wk, n in sorted(stacked_byes.items()))
-            st.warning(f"⚠️ Bye week stacking: {parts}")
+    # Bye-week stacking: flag any week where 2+ starters (non-K/DST) share a bye
+    bye_counts: dict = {}
+    for pick in my_roster:
+        wk = pick.get("bye_week")
+        pos = pick.get("position", "?")
+        if wk and pos not in ("K", "DST"):
+            bye_counts[wk] = bye_counts.get(wk, 0) + 1
+    stacked_byes = {wk: n for wk, n in bye_counts.items() if n >= 2}
+    if stacked_byes:
+        parts = ", ".join(f"Week {wk} ({n} players)" for wk, n in sorted(stacked_byes.items()))
+        st.warning(f"⚠️ Bye week stacking: {parts}")
 
-        for pick in my_roster:
-            pos = pick.get("position", "?")
-            name = pick.get("name", pick.get("player_id", "?"))
-            rnd = pick.get("round_number", "?")
-            bye = pick.get("bye_week")
-            bye_str = f"Bye {int(bye)}" if pd.notna(bye) else ""
-            color = POS_COLOR.get(pos, "#888")
+    for pick in my_roster:
+        pos = pick.get("position", "?")
+        name = pick.get("name", pick.get("player_id", "?"))
+        rnd = pick.get("round_number", "?")
+        bye = pick.get("bye_week")
+        bye_str = f"Bye {int(bye)}" if pd.notna(bye) else ""
+        color = POS_COLOR.get(pos, "#888")
 
-            row_col, btn_col = st.columns([6, 1])
-            row_col.markdown(
-                f"<div style='display:flex;gap:8px;align-items:center;margin:2px 0;'>"
-                f"<span style='color:{color};font-weight:700;font-size:0.8em;width:30px'>{pos}</span>"
-                f"<span style='font-size:0.9em'>{name}</span>"
-                f"<span style='color:#6b7280;font-size:0.72em;width:50px'>{bye_str}</span>"
-                f"<span style='color:#6b7280;font-size:0.75em;margin-left:auto'>Rd {rnd}</span>"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
-            if btn_col.button("✕", key=f"remove_{pick['id']}", help=f"Remove {name} from my team"):
-                board.remove_pick(pick["id"])
-                load_vbd_df.clear()
-                st.rerun()
+        row_col, btn_col = st.columns([6, 1])
+        row_col.markdown(
+            f"<div style='display:flex;gap:8px;align-items:center;margin:2px 0;'>"
+            f"<span style='color:{color};font-weight:700;font-size:0.8em;width:30px'>{pos}</span>"
+            f"<span style='font-size:0.9em'>{name}</span>"
+            f"<span style='color:#6b7280;font-size:0.72em;width:50px'>{bye_str}</span>"
+            f"<span style='color:#6b7280;font-size:0.75em;margin-left:auto'>Rd {rnd}</span>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+        if btn_col.button("✕", key=f"remove_{pick['id']}", help=f"Remove {name} from my team"):
+            board.remove_pick(pick["id"])
+            load_vbd_df.clear()
+            st.rerun()
 
 # ---------------------------------------------------------------------------
 # Pick history
