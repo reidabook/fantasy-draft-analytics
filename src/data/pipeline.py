@@ -30,6 +30,35 @@ def log(msg: str, callback: Optional[Callable] = None) -> None:
         print(msg)
 
 
+def build_name_to_id_map(players: list[dict]) -> dict:
+    """
+    lower-case, suffix-stripped name -> player_id, preferring the Sleeper-native
+    numeric id over an "espn_{id}" id when the shared players table has both
+    for the same real athlete (they're never cross-linked - see
+    get_all_players()'s platform filter). Two bugs this fixes:
+
+    1. A plain {p["name"].lower(): p["id"] for p in players} dict comp lets
+       whichever row happens to come last in the DB result win, which silently
+       attached freshly-imported ADP/projections to the wrong (unused,
+       off-platform) id for every name collision - e.g. Puka Nacua's real
+       FantasyPros rank landed on her ESPN id while the Sleeper id kept
+       showing the far worse Sleeper-proxy ADP on Sleeper leagues' boards.
+
+    2. Keying by the raw name (not suffix-stripped) misses collisions where
+       one source has a suffix and the other doesn't - e.g. Sleeper lists
+       "James Cook" but ESPN lists "James Cook III", so they never landed on
+       the same dict key and the espn_ id was never displaced at all.
+    """
+    name_to_id: dict = {}
+    for p in players:
+        key = transformer._strip_suffix(p["name"].lower())
+        existing = name_to_id.get(key)
+        is_espn = str(p["id"]).startswith("espn_")
+        if existing is None or (str(existing).startswith("espn_") and not is_espn):
+            name_to_id[key] = p["id"]
+    return name_to_id
+
+
 # ---------------------------------------------------------------------------
 # Sleeper import
 # ---------------------------------------------------------------------------
@@ -235,7 +264,7 @@ def import_fantasypros_local(
     players = cache.get_all_players()
     if not players:
         raise ValueError("No players cached — run fetch_players() / prefetch.py --full first")
-    name_to_id = {p["name"].lower(): p["id"] for p in players}
+    name_to_id = build_name_to_id_map(players)
 
     result = {"projections": 0, "adp": 0, "bye_weeks": 0}
 
@@ -269,7 +298,7 @@ def fetch_adp(log_cb: Optional[Callable] = None) -> int:
 
     # Build name → player_id map for resolution
     players = cache.get_all_players()
-    name_to_id = {p["name"].lower(): p["id"] for p in players}
+    name_to_id = build_name_to_id_map(players)
 
     log("Fetching FantasyPros ADP (PPR)...", log_cb)
     raw = fetcher.fantasypros_get_adp(scoring_type="PPR", season=SEASON)
