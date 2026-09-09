@@ -157,6 +157,102 @@ if is_my_pick and not available_df.empty:
 st.markdown("---")
 
 # ---------------------------------------------------------------------------
+# Positional needs, draft controls, Sleeper sync — above the players table
+# ---------------------------------------------------------------------------
+
+needs = board.positional_needs()
+
+needs_col, controls_col, sleeper_col = st.columns([1.2, 1, 1.3])
+
+with needs_col:
+    st.subheader("Positional Needs")
+    need_cols = st.columns(4)
+    need_colors = {"critical": "#f87171", "needed": "#fbbf24", "ok": "#4ade80", "full": "#6b7280"}
+    need_labels = {"critical": "CRITICAL", "needed": "NEED", "ok": "OK", "full": "FULL"}
+    for i, (pos, urgency) in enumerate(needs.items()):
+        with need_cols[i % 4]:
+            color = need_colors.get(urgency, "#888")
+            st.markdown(
+                f"<div style='text-align:center;padding:4px;border:1px solid {color};border-radius:4px;margin:2px;'>"
+                f"<div style='font-weight:700;color:#e5e7eb'>{pos}</div>"
+                f"<div style='color:{color};font-size:0.75em'>{need_labels.get(urgency,'')}</div>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+with controls_col:
+    st.subheader("Controls")
+    ctrl1, ctrl2 = st.columns(2)
+    with ctrl1:
+        if st.button("↩ Undo Last Pick", use_container_width=True):
+            undone = board.undo()
+            if undone:
+                st.success(f"Undone: pick #{undone.get('pick_number')}")
+                load_vbd_df.clear()
+                st.rerun()
+            else:
+                st.warning("No picks to undo.")
+    with ctrl2:
+        if st.button("🔄 Reset Draft", use_container_width=True, type="secondary"):
+            if st.session_state.get("confirm_reset"):
+                board.reset()
+                st.session_state.confirm_reset = False
+                load_vbd_df.clear()
+                st.rerun()
+            else:
+                st.session_state.confirm_reset = True
+                st.warning("Click Reset again to confirm.")
+
+with sleeper_col:
+    if config.platform == "sleeper":
+        st.subheader("Live Sleeper Sync")
+        draft_id = st.session_state.get("sleeper_draft_id") or ""
+        draft_id_input = st.text_input("Draft ID", value=draft_id, placeholder="Sleeper draft ID")
+        if draft_id_input:
+            st.session_state.sleeper_draft_id = draft_id_input
+
+        ws = st.session_state.get("ws_sync")
+        ws_connected = ws is not None and ws.connected
+
+        if ws_connected:
+            st.success("🟢 WebSocket connected — picks auto-sync")
+            if st.button("Disconnect", use_container_width=True):
+                ws.stop()
+                st.session_state.ws_sync = None
+                st.rerun()
+        else:
+            if st.button("Connect WebSocket", use_container_width=True, type="primary"):
+                if not draft_id_input:
+                    st.error("Enter a Draft ID first")
+                else:
+                    try:
+                        from src.draft.websocket import SleeperDraftSync, parse_sleeper_pick
+
+                        def _on_pick(payload: dict):
+                            pick_data = parse_sleeper_pick(payload)
+                            board.mark_pick(
+                                player_id=pick_data["player_id"],
+                                team_number=pick_data["team_number"],
+                            )
+
+                        def _on_error(msg: str):
+                            pass  # Logged internally; UI shows status via ws.connected
+
+                        new_ws = SleeperDraftSync(
+                            draft_id=draft_id_input,
+                            on_pick=_on_pick,
+                            on_error=_on_error,
+                        )
+                        new_ws.start()
+                        st.session_state.ws_sync = new_ws
+                        time.sleep(1)  # Brief wait for connection
+                        st.rerun()
+                    except ImportError:
+                        st.error("Install websockets: pip install websockets")
+
+st.markdown("---")
+
+# ---------------------------------------------------------------------------
 # Main layout: available players (left) | my team (right)
 # ---------------------------------------------------------------------------
 
@@ -278,7 +374,6 @@ with right_col:
     st.subheader("My Team")
 
     my_roster = board.get_my_roster()
-    needs = board.positional_needs()
 
     if not my_roster:
         st.info("No picks yet. Start drafting!")
@@ -320,98 +415,6 @@ with right_col:
                 board.remove_pick(pick["id"])
                 load_vbd_df.clear()
                 st.rerun()
-
-    st.markdown("---")
-
-    # Positional needs
-    st.subheader("Positional Needs")
-    need_cols = st.columns(4)
-    need_colors = {"critical": "#f87171", "needed": "#fbbf24", "ok": "#4ade80", "full": "#6b7280"}
-    need_labels = {"critical": "CRITICAL", "needed": "NEED", "ok": "OK", "full": "FULL"}
-    for i, (pos, urgency) in enumerate(needs.items()):
-        with need_cols[i % 4]:
-            color = need_colors.get(urgency, "#888")
-            st.markdown(
-                f"<div style='text-align:center;padding:4px;border:1px solid {color};border-radius:4px;margin:2px;'>"
-                f"<div style='font-weight:700;color:#e5e7eb'>{pos}</div>"
-                f"<div style='color:{color};font-size:0.75em'>{need_labels.get(urgency,'')}</div>"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
-
-    st.markdown("---")
-
-    # Draft controls
-    st.subheader("Controls")
-
-    ctrl1, ctrl2 = st.columns(2)
-    with ctrl1:
-        if st.button("↩ Undo Last Pick", use_container_width=True):
-            undone = board.undo()
-            if undone:
-                st.success(f"Undone: pick #{undone.get('pick_number')}")
-                load_vbd_df.clear()
-                st.rerun()
-            else:
-                st.warning("No picks to undo.")
-    with ctrl2:
-        if st.button("🔄 Reset Draft", use_container_width=True, type="secondary"):
-            if st.session_state.get("confirm_reset"):
-                board.reset()
-                st.session_state.confirm_reset = False
-                load_vbd_df.clear()
-                st.rerun()
-            else:
-                st.session_state.confirm_reset = True
-                st.warning("Click Reset again to confirm.")
-
-    # Sleeper WebSocket
-    if config.platform == "sleeper":
-        st.markdown("---")
-        st.subheader("Live Sleeper Sync")
-        draft_id = st.session_state.get("sleeper_draft_id") or ""
-        draft_id_input = st.text_input("Draft ID", value=draft_id, placeholder="Sleeper draft ID")
-        if draft_id_input:
-            st.session_state.sleeper_draft_id = draft_id_input
-
-        ws = st.session_state.get("ws_sync")
-        ws_connected = ws is not None and ws.connected
-
-        if ws_connected:
-            st.success("🟢 WebSocket connected — picks auto-sync")
-            if st.button("Disconnect", use_container_width=True):
-                ws.stop()
-                st.session_state.ws_sync = None
-                st.rerun()
-        else:
-            if st.button("Connect WebSocket", use_container_width=True, type="primary"):
-                if not draft_id_input:
-                    st.error("Enter a Draft ID first")
-                else:
-                    try:
-                        from src.draft.websocket import SleeperDraftSync, parse_sleeper_pick
-
-                        def _on_pick(payload: dict):
-                            pick_data = parse_sleeper_pick(payload)
-                            board.mark_pick(
-                                player_id=pick_data["player_id"],
-                                team_number=pick_data["team_number"],
-                            )
-
-                        def _on_error(msg: str):
-                            pass  # Logged internally; UI shows status via ws.connected
-
-                        new_ws = SleeperDraftSync(
-                            draft_id=draft_id_input,
-                            on_pick=_on_pick,
-                            on_error=_on_error,
-                        )
-                        new_ws.start()
-                        st.session_state.ws_sync = new_ws
-                        time.sleep(1)  # Brief wait for connection
-                        st.rerun()
-                    except ImportError:
-                        st.error("Install websockets: pip install websockets")
 
 # ---------------------------------------------------------------------------
 # Pick history
