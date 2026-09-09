@@ -136,13 +136,22 @@ def main() -> None:
         "--local-csv",
         metavar="PATH",
         help="Import a locally-downloaded FantasyPros 'Draft ALL Rankings' CSV "
-             "(stat-line export) as PPR projections + ADP, bypassing the live scrape",
+             "(stat-line export) as projections + ADP, bypassing the live scrape. "
+             "Pair with --scoring-type to say which format this file's own RK "
+             "column reflects (FantasyPros ranks differently per format) — "
+             "upload once per format you draft with, they don't overwrite each other",
+    )
+    parser.add_argument(
+        "--scoring-type",
+        choices=["ppr", "half_ppr", "standard"],
+        default="ppr",
+        help="Which scoring format --local-csv's RK column reflects (default: ppr)",
     )
     parser.add_argument(
         "--local-bye-csv",
         metavar="PATH",
         help="Optional companion FantasyPros cheat-sheet CSV export (has a BYE WEEK "
-             "column) to backfill players.bye_week. Only used alongside --local-csv",
+             "column) to backfill players.bye_week — format-agnostic, can be used alone",
     )
 
     args = parser.parse_args()
@@ -201,7 +210,9 @@ def main() -> None:
         _log(f"Importing local FantasyPros CSV(s)...")
         t0 = time.time()
         try:
-            result = import_fantasypros_local(args.local_csv, args.local_bye_csv, log_cb=_log)
+            result = import_fantasypros_local(
+                args.local_csv, args.local_bye_csv, scoring_type=args.scoring_type, log_cb=_log
+            )
             elapsed = time.time() - t0
             print()
             print("Local CSV import results:")

@@ -59,6 +59,40 @@ def build_name_to_id_map(players: list[dict]) -> dict:
     return name_to_id
 
 
+def build_sibling_id_map(players: list[dict]) -> dict:
+    """
+    lower-case, suffix-stripped name -> every player_id sharing that name,
+    Sleeper and ESPN alike. Real-world consensus rankings (FantasyPros) apply
+    to the athlete, not to one platform's id scheme for them — so once
+    build_name_to_id_map() has resolved a name to its preferred (Sleeper) id
+    for matching purposes, this is used to ALSO propagate the same imported
+    row to that athlete's espn_ id, so an ESPN league's board isn't left with
+    nothing but a far worse sleeper_proxy fallback for every player who also
+    happens to exist in Sleeper's directory (i.e. nearly everyone).
+    """
+    siblings: dict = {}
+    for p in players:
+        key = transformer._strip_suffix(p["name"].lower())
+        siblings.setdefault(key, []).append(p["id"])
+    return siblings
+
+
+def expand_rows_to_sibling_ids(rows: list[dict], id_to_name: dict, siblings: dict) -> list[dict]:
+    """Clone each row (which carries one resolved player_id) onto every sibling id for that name."""
+    expanded = list(rows)
+    seen = {r["player_id"] for r in rows}
+    for row in rows:
+        name = id_to_name.get(row["player_id"])
+        if not name:
+            continue
+        key = transformer._strip_suffix(name.lower())
+        for sibling_id in siblings.get(key, []):
+            if sibling_id not in seen:
+                expanded.append({**row, "player_id": sibling_id})
+                seen.add(sibling_id)
+    return expanded
+
+
 # ---------------------------------------------------------------------------
 # Sleeper import
 # ---------------------------------------------------------------------------
@@ -240,42 +274,69 @@ def fetch_projections(log_cb: Optional[Callable] = None) -> int:
     return len(normalized)
 
 
+SCORING_TYPES = ("ppr", "half_ppr", "standard")
+
+
 def import_fantasypros_local(
     stats_csv_path: Optional[str] = None,
     bye_csv_path: Optional[str] = None,
+    scoring_type: str = "ppr",
     log_cb: Optional[Callable] = None,
 ) -> dict:
     """
     Ingest locally-downloaded FantasyPros 'Draft ALL Rankings' CSV export(s):
-    stats_csv_path as PPR projections + ADP (source="fantasypros_local"),
-    bypassing the live scrape in fetch_adp() when FantasyPros blocks it, and/or
-    bye_csv_path as a players.bye_week backfill. Either may be omitted to
-    update just the other (e.g. a bye-week refresh alone). At least one is
-    required. Matches players by name against the already-cached player
-    directory (run fetch_players()/--full first).
+    stats_csv_path as projections + ADP, bypassing the live scrape in
+    fetch_adp() when FantasyPros blocks it, and/or bye_csv_path as a
+    players.bye_week backfill. Either may be omitted to update just the
+    other (e.g. a bye-week refresh alone). At least one is required.
+    Matches players by name against the already-cached player directory
+    (run fetch_players()/--full first).
 
-    stats_csv_path: the stat-line export (RK, TIERS, PLAYER NAME, TEAM, FANTASYPTS, ...)
-    bye_csv_path: the cheat-sheet export (..., BYE WEEK, UPSIDE, BUST, ...) —
-    only its name/team/bye_week columns are used.
+    scoring_type: which of SCORING_TYPES the RK column in stats_csv_path
+    reflects. FantasyPros ranks players differently per format (e.g. a
+    pass-catching RB moves up in PPR vs standard) in a way that can't be
+    derived from the raw stat line the same CSV also carries — so each
+    format needs its own upload to get its own correct rank/ADP. This is
+    stored as its own source ("fantasypros_local_{scoring_type}") rather
+    than overwriting a single shared one, so uploading Half-PPR rankings
+    doesn't clobber previously-uploaded PPR rankings. compute_vbd() then
+    picks whichever of these matches the active league's own scoring type.
+    Projected points, by contrast, ARE fully derivable from one file's raw
+    stat line for all three formats at once (reception count doesn't change
+    by format, only its point value does) — see normalize_fantasypros_local.
     """
     if not stats_csv_path and not bye_csv_path:
         raise ValueError("Provide at least one of stats_csv_path or bye_csv_path")
+    if scoring_type not in SCORING_TYPES:
+        raise ValueError(f"scoring_type must be one of {SCORING_TYPES}, got {scoring_type!r}")
 
     players = cache.get_all_players()
     if not players:
         raise ValueError("No players cached — run fetch_players() / prefetch.py --full first")
     name_to_id = build_name_to_id_map(players)
+    siblings = build_sibling_id_map(players)
+    id_to_name = {p["id"]: p["name"] for p in players}
 
     result = {"projections": 0, "adp": 0, "bye_weeks": 0}
 
     if stats_csv_path:
-        log(f"Parsing local FantasyPros CSV: {stats_csv_path}", log_cb)
+        source = f"fantasypros_local_{scoring_type}"
+        log(f"Parsing local FantasyPros CSV ({scoring_type}): {stats_csv_path}", log_cb)
         raw = fetcher.fantasypros_parse_local_csv(stats_csv_path)
-        proj_rows, adp_rows = transformer.normalize_fantasypros_local(raw, name_to_id, season=SEASON)
+        proj_rows, adp_rows = transformer.normalize_fantasypros_local(
+            raw, name_to_id, season=SEASON, source=source
+        )
+        # Real-world rankings apply to the athlete, not to whichever platform's
+        # id build_name_to_id_map() happened to prefer — propagate to the
+        # Sleeper/ESPN sibling id too, so an ESPN league's board doesn't fall
+        # back to a far worse proxy just because this player also has a
+        # Sleeper id (true for nearly everyone).
+        proj_rows = expand_rows_to_sibling_ids(proj_rows, id_to_name, siblings)
+        adp_rows = expand_rows_to_sibling_ids(adp_rows, id_to_name, siblings)
 
         cache.upsert_projections(proj_rows)
         cache.upsert_adp(adp_rows)
-        log(f"Cached {len(proj_rows)} projections and {len(adp_rows)} ADP entries (fantasypros_local)", log_cb)
+        log(f"Cached {len(proj_rows)} projections and {len(adp_rows)} ADP entries ({source})", log_cb)
         result["projections"] = len(proj_rows)
         result["adp"] = len(adp_rows)
 
@@ -283,6 +344,12 @@ def import_fantasypros_local(
         log(f"Parsing local FantasyPros bye-week CSV: {bye_csv_path}", log_cb)
         bye_raw = fetcher.fantasypros_parse_local_bye_weeks_csv(bye_csv_path)
         bye_weeks = transformer.normalize_fantasypros_bye_weeks(bye_raw, name_to_id)
+        for pid, wk in list(bye_weeks.items()):
+            name = id_to_name.get(pid)
+            if not name:
+                continue
+            for sibling_id in siblings.get(transformer._strip_suffix(name.lower()), []):
+                bye_weeks.setdefault(sibling_id, wk)
         cache.upsert_bye_weeks(bye_weeks)
         log(f"Cached {len(bye_weeks)} bye weeks", log_cb)
         result["bye_weeks"] = len(bye_weeks)

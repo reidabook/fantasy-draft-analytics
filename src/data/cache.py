@@ -440,16 +440,29 @@ def upsert_vbd_scores(vbd_rows: List[Dict[str, Any]]) -> None:
         )
 
 
+_SCORING_TYPES = ("ppr", "half_ppr", "standard")
+
+
 def get_vbd_scores(league_id: str, season: int, scoring_type: str) -> List[dict]:
     # Real/market-consensus sources before auto-generated proxy fallbacks (see
     # docs/data/pipeline.md "ADP source priority") — mirrors
-    # analytics/vbd.py's _SOURCE_PRIORITY. A plain MIN(adp_overall) across
+    # analytics/vbd.py's _source_priority(). A plain MIN(adp_overall) across
     # sources is a bug: a stale sleeper_proxy row can numerically beat a
     # correct, freshly-imported fantasypros_local row for the same player,
     # showing the wrong ADP even though the right data is sitting right there.
+    #
+    # fantasypros_local_{scoring_type} (this league's OWN format) ranks first —
+    # FantasyPros ranks players differently per format, so a half-PPR league
+    # must not silently show PPR ranks just because that's the only file
+    # uploaded most recently. scoring_type is checked against a fixed
+    # whitelist before going anywhere near the query string.
+    if scoring_type not in _SCORING_TYPES:
+        raise ValueError(f"scoring_type must be one of {_SCORING_TYPES}, got {scoring_type!r}")
+    other_formats = [st for st in _SCORING_TYPES if st != scoring_type]
+
     with get_conn() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT v.*, p.name, p.position, p.team, p.age, p.injury_status, p.depth_chart_pos,
                    p.bye_week, a.adp_overall
             FROM vbd_scores v
@@ -460,7 +473,10 @@ def get_vbd_scores(league_id: str, season: int, scoring_type: str) -> List[dict]
                            ROW_NUMBER() OVER (
                                PARTITION BY player_id
                                ORDER BY CASE source
-                                   WHEN 'fantasypros_local' THEN 0
+                                   WHEN 'fantasypros_local_{scoring_type}' THEN 0
+                                   WHEN 'fantasypros_local_{other_formats[0]}' THEN 0.5
+                                   WHEN 'fantasypros_local_{other_formats[1]}' THEN 0.5
+                                   WHEN 'fantasypros_local' THEN 0.5
                                    WHEN 'fantasypros' THEN 1
                                    WHEN 'espn' THEN 1
                                    WHEN 'espn_proxy' THEN 2

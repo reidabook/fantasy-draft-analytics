@@ -110,30 +110,44 @@ in `flags.py` (prior-year = 2023, current-year = 2024).
 
 ---
 
-### `import_fantasypros_local(stats_csv_path, bye_csv_path=None, log_cb=None)`
+### `import_fantasypros_local(stats_csv_path=None, bye_csv_path=None, scoring_type="ppr", log_cb=None)`
 
-Ingests a manually-downloaded FantasyPros "Draft ALL Rankings" CSV export — the
-same one `fetch_adp()` would scrape live, for when that scrape is blocked. Called
-by `prefetch.py --local-csv PATH [--local-bye-csv PATH]`.
+Ingests manually-downloaded FantasyPros "Draft ALL Rankings" CSV export(s) — the
+same data `fetch_adp()` would scrape live, for when that scrape is blocked. Called
+by `prefetch.py --local-csv PATH [--scoring-type ppr|half_ppr|standard] [--local-bye-csv PATH]`,
+or from the app's **Update Rankings** page (`pages/6_Update_Rankings.py`), which
+saves each uploaded file to a temp path and calls this the same way. At least
+one of `stats_csv_path` / `bye_csv_path` is required; either can be given alone
+to update just that half (e.g. a bye-week-only refresh).
 
 ```
 fantasypros_parse_local_csv(stats_csv_path)       # stat-line variant: RK, TIERS,
                                                      PLAYER NAME, TEAM, FANTASYPTS, ...
-  → normalize_fantasypros_local(raw, name_to_id, season)
+  → normalize_fantasypros_local(raw, name_to_id, season, source=f"fantasypros_local_{scoring_type}")
   → (proj_rows, adp_rows)
-  → upsert_projections(proj_rows) / upsert_adp(adp_rows)   # source="fantasypros_local"
+  → expand_rows_to_sibling_ids(...)   # propagate to the Sleeper/ESPN sibling id too
+  → upsert_projections(proj_rows) / upsert_adp(adp_rows)
 
 if bye_csv_path:
   fantasypros_parse_local_bye_weeks_csv(bye_csv_path)   # cheat-sheet variant: RK, TIERS,
                                                            PLAYER NAME, TEAM, POS, BYE WEEK, ...
     → normalize_fantasypros_bye_weeks(raw, name_to_id)
+    → (same sibling-id propagation, inline)
     → upsert_bye_weeks(bye_weeks)
 ```
 
+**scoring_type** tags which format the RK column reflects, since FantasyPros ranks
+players differently per format in a way the raw stat line alone can't tell you —
+stored as its own source (`fantasypros_local_ppr` / `_half_ppr` / `_standard`) so
+uploading one format never overwrites another. See `CLAUDE.md`'s "Scoring-format-scoped
+rankings" section for how `compute_vbd()` / `get_vbd_scores()` then pick the right one
+per league, and how sibling-id propagation keeps ESPN leagues from missing out.
+
 Requires the player directory already cached (`fetch_players()` / `--full` first) —
-matching is by lowercased name (+ suffix-stripping + fuzzy fallback) against
-`cache.get_all_players()`. Team-defense/kicker rows in the CSV don't match a
-named player and are logged as unmatched/skipped — expected, not an error.
+matching is by lowercased, suffix-stripped name (+ fuzzy fallback) against
+`cache.get_all_players()` via `build_name_to_id_map()`. Team-defense/kicker rows in
+the CSV don't match a named player and are logged as unmatched/skipped — expected,
+not an error.
 
 ---
 

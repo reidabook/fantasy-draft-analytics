@@ -159,6 +159,7 @@ def normalize_fantasypros_local(
     raw: List[dict],
     player_id_map: Dict[str, str],
     season: int,
+    source: str = "fantasypros_local",
 ) -> Tuple[List[dict], List[dict]]:
     """
     Convert fetcher.fantasypros_parse_local_csv() output → (projection rows, adp rows).
@@ -214,7 +215,7 @@ def normalize_fantasypros_local(
             "player_id": player_id,
             "season": season,
             "week": 0,
-            "source": "fantasypros_local",
+            "source": source,
             "pts_ppr": pts_ppr,
             "pts_half_ppr": pts_half,
             "pts_std": pts_std,
@@ -225,7 +226,7 @@ def normalize_fantasypros_local(
         adp_rows.append({
             "player_id": player_id,
             "season": season,
-            "source": "fantasypros_local",
+            "source": source,
             "adp_overall": float(p["rank"]),
             "adp_ppr": float(p["rank"]),
             "adp_half_ppr": float(p["rank"]),

@@ -40,24 +40,36 @@ pts_col = {
 }.get(config.scoring.type, "pts_ppr")  # defaults to PPR if unknown
 ```
 
-### 2. Resolve multiple projection sources
+### 2. Resolve multiple projection sources — and 3. multiple ADP sources
 
-When both Sleeper and FantasyPros projections exist for the same player, take the
-maximum (most optimistic projection wins):
-
-```python
-proj_best = projections.groupby("player_id")[pts_col].max().reset_index()
-proj_best.columns = ["player_id", "projected_pts"]
-```
-
-### 3. Resolve multiple ADP sources
-
-When both FantasyPros and Sleeper proxy ADP exist, take the minimum (best available
-draft position):
+When more than one source has a projection or ADP value for the same player,
+**do not** `max()`/`min()` across them — whichever number happens to be
+numerically larger/smaller wins by coincidence, not because it's more
+trustworthy (this was a real bug: a stale `sleeper_proxy` ADP could beat a
+correct, freshly-imported `fantasypros_local_*` one for the same player).
+Both go through `_pick_best_by_source(df, group_col, value_col, scoring_type)`,
+which sorts by `_source_priority(scoring_type)` and keeps the best-ranked row
+per player:
 
 ```python
-adp_best = adp.groupby("player_id")["adp_overall"].min().reset_index()
+_BASE_SOURCE_PRIORITY = {"fantasypros": 1, "espn": 1, "espn_proxy": 2, "sleeper": 2, "sleeper_proxy": 3}
+
+def _source_priority(scoring_type):
+    priority = dict(_BASE_SOURCE_PRIORITY)
+    for st in ("ppr", "half_ppr", "standard"):
+        priority[f"fantasypros_local_{st}"] = 0 if st == scoring_type else 0.5
+    priority["fantasypros_local"] = 0.5  # pre-format-split rows, if any remain
+    return priority
+
+proj_best = _pick_best_by_source(projections, "player_id", pts_col, config.scoring.type)
+adp_best = _pick_best_by_source(adp, "player_id", "adp_overall", config.scoring.type)
 ```
+
+`fantasypros_local_{scoring_type}` — this league's own format — always wins when
+present, since FantasyPros ranks players differently per format (e.g. a
+pass-catching RB moves up in PPR vs standard) in a way the raw stat line alone
+can't tell you. See `pages/6_Update_Rankings.py` / `CLAUDE.md`'s
+"Scoring-format-scoped rankings" for how those sources get populated.
 
 Unranked players are assigned `adp_overall = 999.0` (effectively undrafted).
 

@@ -9,12 +9,13 @@ AI context briefing for this codebase. Read this before modifying any file.
 A personal, locally-run Streamlit app for fantasy football draft preparation.
 Supports Sleeper and ESPN leagues. All data cached in SQLite. No server required.
 
-**Five Streamlit pages:**
+**Six Streamlit pages:**
 1. League Import — pull settings from Sleeper API or ESPN API
 2. VBD Rankings — primary board sorted by Value-Based Drafting surplus
 3. Player Research — metrics table, player comparison, radar chart
 4. Draft Board — live pick tracker with scarcity alerts and recommendations
 5. Sleeper Radar — sleeper/bust/handcuff detection with evidence rows
+6. Update Rankings — upload FantasyPros CSVs, one per scoring format
 
 ---
 
@@ -211,17 +212,46 @@ Requires `websockets` package. Raises ImportError with helpful message if missin
 prefetch.py --quick                              →  run_quick()   projections (24h TTL) + ADP (24h TTL)
 prefetch.py --full                               →  run_full()    players (24h) + projections + ADP + nfl_metrics (168h)
 prefetch.py --vbd                                →  recompute_all_vbd()   no fetch, reruns analytics only
-prefetch.py --local-csv PATH [--local-bye-csv PATH] →  import_fantasypros_local()   ingest a manually-downloaded
-                                                     FantasyPros "Draft ALL Rankings" CSV as PPR projections + ADP
-                                                     (source="fantasypros_local"), for when the live scrape in
-                                                     fetch_adp() is blocked. Requires players already cached
-                                                     (run --full first). Matches by name against the player
-                                                     directory; unmatched rows (team DST entries, etc.) are logged
-                                                     and skipped. --local-bye-csv backfills players.bye_week from
-                                                     the cheat-sheet CSV variant.
+prefetch.py --local-csv PATH [--scoring-type ppr|half_ppr|standard] [--local-bye-csv PATH]
+                                                  →  import_fantasypros_local()   ingest a manually-downloaded
+                                                     FantasyPros "Draft ALL Rankings" CSV as projections + ADP,
+                                                     for when the live scrape in fetch_adp() is blocked. Also
+                                                     reachable from the app: Update Rankings page (file uploads,
+                                                     one slot per format, instead of the CLI). Requires players
+                                                     already cached (run --full first). Matches by name against
+                                                     the player directory; unmatched rows (team DST entries, etc.)
+                                                     are logged and skipped. --local-bye-csv backfills
+                                                     players.bye_week from the cheat-sheet CSV variant (format-
+                                                     agnostic, can be used alone with no --local-csv).
 ```
 
-ADP source priority: FantasyPros → Sleeper projection ordering (if FantasyPros blocked).
+**Scoring-format-scoped rankings**: FantasyPros ranks players differently per format (a
+pass-catching RB moves up in PPR vs standard) in a way that can't be derived from the raw
+stat line the same CSV also carries. `--scoring-type` (default `ppr`) tags the import as
+source `fantasypros_local_{ppr,half_ppr,standard}` — three independent sources that never
+overwrite each other, so uploading Half-PPR rankings doesn't clobber PPR ones. Projected
+points, by contrast, ARE fully derivable from any one file's raw stat line for all three
+formats at once (reception count doesn't change by format, only its point value does) —
+see `normalize_fantasypros_local()`.
+
+Both `analytics/vbd.py::compute_vbd()` (baked into `vbd_scores` at write time) and
+`cache.py::get_vbd_scores()` (display-time ADP join) resolve ADP/projections per-player
+by an explicit source priority — **never** `max()`/`min()` across sources, which lets
+whichever numeric value happens to be larger/smaller win by coincidence rather than
+because it's more trustworthy. Priority, from a given league's own `scoring_type`:
+`fantasypros_local_{that league's own format}` (0) > the other two `fantasypros_local_*`
+variants / legacy `fantasypros_local` (0.5) > `fantasypros`/`espn` (1) >
+`espn_proxy`/`sleeper` (2) > `sleeper_proxy` (3).
+
+Real-world rankings apply to the athlete, not to whichever platform's id
+`build_name_to_id_map()` happens to prefer for matching (Sleeper's numeric id, preferred
+over `espn_{id}` on a name collision — see its docstring) — `import_fantasypros_local()`
+also propagates each imported row to that athlete's sibling id via
+`build_sibling_id_map()`/`expand_rows_to_sibling_ids()`, so an ESPN league's board doesn't
+fall back to a far worse `sleeper_proxy` value just because the player also has a Sleeper id.
+
+ADP source priority for the *live* scrape path specifically: FantasyPros → Sleeper
+projection ordering (if FantasyPros blocked).
 
 `nfl_data_py` uses:
 - `nfl.import_ids()` for Sleeper ↔ gsis_id mapping
@@ -268,6 +298,7 @@ Falls back to "C" for all players if `schedules_df` is None or empty.
 - `docs/features/player-research.md` — Search, metrics, comparison, radar
 - `docs/features/draft-board.md` — Pick tracker, recommendations, WebSocket sync
 - `docs/features/sleeper-radar.md` — Flag tabs, evidence rows, fallback logic
+- `docs/features/update-rankings.md` — Per-format CSV upload UI, why 3 files
 - `docs/data/pipeline.md` — Fetch pipeline, TTLs, FantasyPros fallback
 - `docs/data/cache-schema.md` — All 8 SQLite tables with columns and PKs
 - `docs/data/fetchers.md` — API clients: Sleeper, ESPN, FantasyPros, nfl_data_py

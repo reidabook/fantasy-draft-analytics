@@ -19,8 +19,13 @@ from src.config.settings import LeagueConfig
 # coincidence rather than because it's more trustworthy, silently discarding
 # a freshly-imported fantasypros_local number in favor of a stale sleeper_proxy
 # one whenever the stale one happens to look "better".
-_SOURCE_PRIORITY = {
-    "fantasypros_local": 0,
+#
+# fantasypros_local_{ppr,half_ppr,standard} rank first for the CALLING
+# league's own scoring_type (see _source_priority) — FantasyPros ranks
+# players differently per format (e.g. a pass-catching RB moves up in PPR
+# vs standard), so a half-PPR league must not silently draft off PPR ranks
+# just because that's the only file that happened to get uploaded last.
+_BASE_SOURCE_PRIORITY = {
     "fantasypros": 1,
     "espn": 1,
     "espn_proxy": 2,
@@ -29,10 +34,19 @@ _SOURCE_PRIORITY = {
 }
 
 
-def _pick_best_by_source(df: pd.DataFrame, group_col: str, value_col: str) -> pd.DataFrame:
-    """Within each group_col, keep the row whose 'source' ranks best in _SOURCE_PRIORITY."""
+def _source_priority(scoring_type: str) -> dict:
+    priority = dict(_BASE_SOURCE_PRIORITY)
+    for st in ("ppr", "half_ppr", "standard"):
+        priority[f"fantasypros_local_{st}"] = 0 if st == scoring_type else 0.5
+    priority["fantasypros_local"] = 0.5  # pre-format-split rows, if any remain
+    return priority
+
+
+def _pick_best_by_source(df: pd.DataFrame, group_col: str, value_col: str, scoring_type: str) -> pd.DataFrame:
+    """Within each group_col, keep the row whose 'source' ranks best for this league's scoring_type."""
+    priority = _source_priority(scoring_type)
     ranked = df.copy()
-    ranked["_source_rank"] = ranked["source"].map(_SOURCE_PRIORITY).fillna(99)
+    ranked["_source_rank"] = ranked["source"].map(priority).fillna(99)
     ranked = ranked.sort_values("_source_rank").drop_duplicates(subset=[group_col], keep="first")
     return ranked[[group_col, value_col]].reset_index(drop=True)
 
@@ -75,7 +89,7 @@ def compute_vbd(
     )
 
     # Take the highest-priority source's projection when multiple exist
-    proj_best = _pick_best_by_source(proj_df, "player_id", pts_col).rename(
+    proj_best = _pick_best_by_source(proj_df, "player_id", pts_col, scoring_type).rename(
         columns={pts_col: "projected_pts"}
     )
 
@@ -84,7 +98,7 @@ def compute_vbd(
     df["projected_pts"] = df["projected_pts"].fillna(0.0)
 
     if not adp_df.empty:
-        adp_best = _pick_best_by_source(adp_df, "player_id", "adp_overall")
+        adp_best = _pick_best_by_source(adp_df, "player_id", "adp_overall", scoring_type)
         df = df.merge(adp_best, left_on="id", right_on="player_id", how="left")
         df["adp_overall"] = df["adp_overall"].fillna(999.0)
     else:
