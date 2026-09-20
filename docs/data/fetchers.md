@@ -92,9 +92,41 @@ espn_get_league(league_id, year, espn_s2, swid)
 espn_get_draft_picks(espn_league)
     → iterates espn_league.draft
     → returns list of pick dicts
+
+espn_get_weekly_scores(espn_league, week=None)
+    → iterates espn_league.box_scores(week)
+    → returns {team_name: score} for every team that week (including the
+      "Fake team" — callers exclude it, see src/weekly/payout.py)
 ```
 
 `league.settings` provides scoring weights and roster slots for `build_league_config_from_espn()`.
+
+### Weekly median override + payout report (`weekly_update.py`)
+
+A separate, in-season automation — not part of the pre-draft app — that runs after
+each week's games finish. See `src/weekly/` (`payout.py`, `commish_override.py`,
+`notify.py`) and `weekly_update.py` at the repo root. Computes the median of all
+real teams' scores (excluding the "Fake team", used to fill an odd-sized league),
+overrides the Fake team's ESPN score to that median via Playwright browser
+automation (ESPN has no write API for this), and emails a report with the median
+and the week's high scorer (for a Venmo payout).
+
+The click-path (direct scoreboard URL + matchup lookup by `data-team`/`href` team id,
+since the Fake team's opponent/position on the board changes weekly) was found by
+inspecting the real live league's DOM and is baked into `src/weekly/commish_override.py`.
+
+**Auth is the one non-obvious part**: cookie-only auth (`espn_s2`/`SWID`) works for
+the read-only ESPN API above, but ESPN's website UI needs a fully-established login
+session to reach commissioner tools — cookie injection alone gets redirected to a
+login page. `weekly_update.py` reuses a saved session from `ESPN_PLAYWRIGHT_STATE_PATH`
+(default `.espn_session.json`, gitignored), and if that's missing or has expired,
+automatically logs back in via ESPN's Disney OneID iframe form using
+`ESPN_USERNAME`/`ESPN_PASSWORD` from `.env` (plaintext — this is the tradeoff for a
+cron job that never needs manual re-login) and saves the refreshed session for next
+time. `save_espn_session.py` remains available for a one-time manual login if you'd
+rather not store the password. If ESPN's page structure itself changes
+(`NotConfiguredError`), the override step falls back to reporting the median by email
+for a manual override — the payout-winner email still goes out either way.
 
 ---
 

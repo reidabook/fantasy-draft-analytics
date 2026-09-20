@@ -8,3 +8,5 @@ __pycache__/
 *.pyo
 .DS_Store
 .streamlit/secrets.toml
+logs/
+.espn_session.json

@@ -147,6 +147,75 @@ def espn_get_full_player_pool(espn_league, size: int = 3000) -> List[dict]:
     return result
 
 
+def espn_get_weekly_scores(espn_league, week: Optional[int] = None) -> Dict[str, float]:
+    """
+    Pull every team's total score for a given week (defaults to the league's
+    current week). Returns {team_name: score}, including the "Fake team" —
+    callers that need to exclude it do so themselves (see src/weekly/payout.py).
+    Uses box_scores() rather than scoreboard() since it resolves both sides of
+    a matchup to Team objects even for a mid-week/live period.
+    """
+    scores: Dict[str, float] = {}
+    for box in espn_league.box_scores(week=week):
+        if box.home_team is not None:
+            scores[box.home_team.team_name] = box.home_score
+        if box.away_team is not None:
+            scores[box.away_team.team_name] = box.away_score
+    return scores
+
+
+# Owners whose group-text label isn't just their first name (nicknames the
+# league actually uses). Keyed by (firstName, lastName) lowercased so it
+# survives however ESPN capitalizes a given owner's profile.
+_MANAGER_LABEL_OVERRIDES = {
+    ("matt", "medvene"): "Medvene",
+    ("tyler", "carwell"): "Tex",
+}
+
+
+def espn_get_team_managers(espn_league) -> Dict[str, str]:
+    """
+    Map {team_name: manager_label} from the league's current owners — see
+    https://fantasy.espn.com/football/tools/leaguemembers?leagueId=<id> for
+    the source of truth this mirrors. Resolved fresh from team.owners (not
+    the team name) each call, since team names get renamed week to week but
+    ESPN's owner records don't.
+    Label is the owner's first name, except the overrides in
+    _MANAGER_LABEL_OVERRIDES (nicknames the league actually uses).
+    Falls back to the team name if a team has no listed owner.
+    """
+    managers = {}
+    for team in espn_league.teams:
+        owners = getattr(team, "owners", None)
+        if not owners:
+            managers[team.team_name] = team.team_name
+            continue
+        owner = owners[0]
+        first = (owner.get("firstName") or "").strip()
+        last = (owner.get("lastName") or "").strip()
+        override = _MANAGER_LABEL_OVERRIDES.get((first.lower(), last.lower()))
+        managers[team.team_name] = override or (first.capitalize() if first else team.team_name)
+    return managers
+
+
+def espn_get_fake_team_opponent(
+    espn_league, week: Optional[int], fake_team_name: str
+) -> Optional[Tuple[str, float]]:
+    """
+    Find whichever real team played the "Fake team" this week — that's the
+    team on the hook to beat the league median. Returns (opponent_name,
+    opponent_score), or None if the Fake team has no matchup that week.
+    """
+    for box in espn_league.box_scores(week=week):
+        home_name = box.home_team.team_name if box.home_team else None
+        away_name = box.away_team.team_name if box.away_team else None
+        if home_name == fake_team_name and away_name is not None:
+            return away_name, box.away_score
+        if away_name == fake_team_name and home_name is not None:
+            return home_name, box.home_score
+    return None
+
+
 def espn_get_draft_picks(espn_league) -> List[dict]:
     """Extract draft picks from ESPN league object."""
     picks = []

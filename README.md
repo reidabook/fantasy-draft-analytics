@@ -109,10 +109,20 @@ fantasy/
 │   │   ├── scarcity.py       # Positional scarcity alerts
 │   │   ├── flags.py          # Sleeper/bust/handcuff detection
 │   │   └── schedule.py       # Playoff schedule grades (Wks 15-17)
-│   └── draft/
-│       ├── board.py          # Draft state management (SQLite-persisted)
-│       ├── recommender.py    # Pick recommendation engine
-│       └── websocket.py      # Sleeper WebSocket live sync
+│   ├── draft/
+│   │   ├── board.py          # Draft state management (SQLite-persisted)
+│   │   ├── recommender.py    # Pick recommendation engine
+│   │   └── websocket.py      # Sleeper WebSocket live sync
+│   └── weekly/                       # In-season: median override + payout report
+│       ├── payout.py                 # Median / high-scorer logic (pure, unit-tested)
+│       ├── commish_override.py       # Playwright: ESPN commissioner score override
+│       ├── notify.py                 # Email report (Gmail SMTP)
+│       └── imessage.py               # Snarky group-text builder + Messages.app sender
+│
+├── weekly_update.py          # CLI: run the weekly median override + payout report
+├── save_espn_session.py      # One-time/periodic manual ESPN login for Playwright
+├── list_imessage_chats.py    # One-time: find your league group chat's id
+├── send_group_text.py        # Send the group text weekly_update.py staged, after approval
 │
 └── pages/
     ├── 1_League_Import.py    # Import leagues from Sleeper/ESPN
@@ -155,6 +165,86 @@ VBD is recalculated per-league using each league's exact scoring config and team
 
 ---
 
+## In-Season: Weekly Median Override + Payout Report
+
+For leagues with an odd number of real teams padded out with a "Fake team": after each
+week's games finish, `weekly_update.py` fetches every team's score, computes the median
+(excluding the Fake team), overrides the Fake team's ESPN score to that median, and
+emails you the median plus the week's high scorer (for a Venmo payout). See
+`docs/data/fetchers.md` for the full design.
+
+### One-time setup
+
+```bash
+# 1. Install Playwright's browser binary (already in requirements.txt)
+playwright install chromium
+
+# 2. Add to .env (see .env.template):
+#    FAKE_TEAM_NAME=Fake team          # must match the ESPN team name exactly
+#    FAKE_TEAM_ID=...                  # ESPN team id, from .../team?...&teamId=N
+#    GMAIL_ADDRESS=you@gmail.com
+#    GMAIL_APP_PASSWORD=...            # https://myaccount.google.com/apppasswords
+#    ESPN_USERNAME=...                 # for automatic re-login when the session expires
+#    ESPN_PASSWORD=...                 # stored in plaintext — the tradeoff for a fully
+#                                       # unattended cron job; see docs/data/fetchers.md
+
+# 3. Log into ESPN once so the Playwright automation has a real session to reuse
+#    (cookie-only auth works for reads but not for the commissioner website UI).
+#    Optional if ESPN_USERNAME/ESPN_PASSWORD are set above — the automation will
+#    log in on its own the first time and whenever the session later expires.
+python save_espn_session.py
+```
+
+### Running it
+
+```bash
+python weekly_update.py --week 3 --dry-run   # fills the ESPN form, never submits, no email/text
+python weekly_update.py --week 3             # real run: overrides + emails the report
+python weekly_update.py                      # defaults to the most recently completed week
+```
+
+If `IMESSAGE_GROUP_CHAT_ID` is set, a real run also stages a snarky group-text
+summary at `logs/pending_group_text.txt` and prints it — it is **not** sent
+automatically. Review it, then send it with:
+
+```bash
+python send_group_text.py
+```
+
+(Re-running `weekly_update.py` regenerates that file; you can also hand-edit
+it before sending — `send_group_text.py` just sends whatever's in it.)
+
+### Running it manually each week (current setup)
+
+The saved ESPN session (`.espn_session.json`) eventually expires, and headless
+auto-relogin via `ESPN_USERNAME`/`ESPN_PASSWORD` turned out to be unreliable
+(ESPN's login flow appears to hit a verification step that a scripted login
+can't get past). Rather than fight that, the current setup is manual: each
+week, log in once and run the update —
+
+```bash
+python save_espn_session.py     # only if weekly_update.py reports the session expired
+python weekly_update.py         # defaults to the most recently completed week
+```
+
+### Automate it instead (cron, Tuesday mornings)
+
+The code still fully supports unattended cron — pick this back up if you'd
+rather not run it by hand. `ESPN_USERNAME`/`ESPN_PASSWORD` in `.env` enable
+best-effort auto-relogin (may not always get past ESPN's verification step,
+but the weekly email still reports the median/high-scorer either way and
+tells you if a manual `save_espn_session.py` run is needed). Only add the
+cron job after a real (non-dry-run) test run has been verified against
+ESPN's site by hand — this writes to a live league:
+
+```bash
+crontab -e
+# Add:
+0 9 * * 2 cd /Users/reidfrancis/projects/fantasy-draft-analytics && .venv/bin/python weekly_update.py >> logs/weekly_update.log 2>&1
+```
+
+---
+
 ## Troubleshooting
 
 | Issue | Fix |
@@ -164,3 +254,5 @@ VBD is recalculated per-league using each league's exact scoring config and team
 | Sleeper WebSocket drops | Click Disconnect → reconnect; or mark picks manually |
 | nfl_data_py metrics missing | Run `prefetch.py --full` (not --quick); metrics require weekly fetch |
 | Stale data after re-fetch | Run `prefetch.py --quick --force` to bypass cache TTL |
+| `weekly_update.py` raises `NotConfiguredError` | Selectors not recorded yet — run `playwright codegen` and fill in `src/weekly/commish_override.py` |
+| `weekly_update.py` email says override failed | ESPN cookies likely expired, or ESPN changed its UI — re-extract cookies or re-record selectors; median is still reported for a manual override |
