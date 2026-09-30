@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Week {{ week }} · {{ data.league_name }}</title>
+<meta name="description" content="{{ copy.headline }} — {{ copy.dek }}">
+<meta property="og:title" content="Week {{ week }}: {{ copy.headline }}">
+<meta property="og:description" content="{{ copy.dek }}">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #f8f5ee; --surface: #fffdf8; --ink: #161514; --muted: #6b665d; --rule: #d8d2c4;
+  --accent: #9b1c1c; --win: #1f5f3a; --loss: #9b1c1c; --bar: #cfc6b3;
+  --serif: "Newsreader", Georgia, serif; --sans: "Inter", system-ui, sans-serif; --mono: "JetBrains Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #141312; --surface: #1c1b19; --ink: #efebe3; --muted: #9d978b; --rule: #37342f;
+          --accent: #e0605a; --win: #6fc28f; --loss: #e0605a; --bar: #4a463f; }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.6 var(--sans); }
+.wrap { max-width: 760px; margin: 0 auto; padding: 0 16px; }
+.kicker { font: 700 11px/1.4 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--accent); margin: 0 0 6px; }
+.meta { font: 500 11px/1.4 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+h1, h2, h3 { font-family: var(--serif); font-weight: 800; letter-spacing: -.035em; line-height: .95; margin: 0; }
+header.masthead { padding-top: 48px; padding-bottom: 24px; }
+header.masthead h1 { font-size: clamp(64px, 16vw, 120px); }
+.dek { font-size: 17px; color: var(--muted); max-width: 32em; margin: 18px 0 20px; }
+.asof { display: inline-flex; gap: 8px; align-items: center; border-top: 1px solid var(--rule); padding-top: 10px; }
+.asof::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+
+nav.tabs { position: sticky; top: 0; z-index: 5; background: var(--bg); border-top: 1.5px solid var(--ink); border-bottom: 1.5px solid var(--ink); }
+nav.tabs .wrap { display: flex; overflow-x: auto; scrollbar-width: none; }
+nav.tabs a { flex: 1 0 auto; text-align: center; padding: 13px 14px 11px; font: 600 14px var(--sans); color: var(--muted);
+  text-decoration: none; border-bottom: 3px solid transparent; }
+nav.tabs a[aria-current="page"] { color: var(--accent); border-bottom-color: var(--accent); }
+
+section.tab { padding: 28px 0 56px; scroll-margin-top: 52px; }
+.js section.tab:not(.active) { display: none; }
+.lede h2 { font-size: clamp(44px, 11vw, 76px); margin: 4px 0 18px; }
+.lede p { font-size: 17px; margin: 0 0 14px; }
+.section-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+  border-bottom: 1px solid var(--rule); padding-bottom: 8px; margin: 44px 0 16px; }
+.section-head h3 { font-size: 28px; }
+
+.cards { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr)); }
+.card { background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: 16px; min-width: 0; }
+.match .side { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 4px 0; }
+.match .side .nm { min-width: 0; }
+.match .side .team { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+.match .side .mgr { font-size: 12px; color: var(--muted); }
+.match .side .pts { font: 700 20px var(--mono); }
+.match .side.lost { opacity: .55; }
+.match .side.won .pts { color: var(--win); }
+.match .top { font-size: 12px; color: var(--muted); margin: 0; }
+.match .blurb { border-top: 1px dashed var(--rule); margin: 10px 0 0; padding-top: 10px; font-size: 14.5px; }
+.logo { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; background: var(--rule); display: block; }
+.logo.ph { display: grid; place-items: center; font: 700 10px var(--mono); color: var(--muted); }
+.median-tag { font: 700 10px var(--mono); letter-spacing: .1em; color: var(--accent); }
+
+.team-card header { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 12px; align-items: center; }
+.team-card .logo { width: 44px; height: 44px; }
+.team-card h3 { font-size: 22px; line-height: 1.05; overflow-wrap: anywhere; }
+.team-card .rec { font: 700 18px var(--mono); text-align: right; }
+.team-card .rec small { display: block; font: 500 10px var(--mono); color: var(--muted); letter-spacing: .08em; }
+.spark { display: flex; align-items: flex-end; gap: 4px; height: 44px; margin: 14px 0 6px; }
+.spark span { flex: 1; background: var(--bar); border-radius: 2px 2px 0 0; min-height: 2px; position: relative; }
+.spark span.w { background: var(--win); } .spark span.l { background: var(--loss); opacity: .7; }
+.team-card p { font-size: 14.5px; margin: 8px 0 0; }
+.team-card .stats { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+
+.table-wrap { overflow-x: auto; border: 1px solid var(--rule); background: var(--surface); border-radius: 4px; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { padding: 10px 10px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--rule); }
+th { font: 700 10px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+td.tm, th.tm { text-align: left; }
+td.tm { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+td.tm small { display: block; color: var(--muted); font-size: 12px; }
+td.num { font-family: var(--mono); }
+tr:last-child td { border-bottom: 0; }
+tr.cut td { border-bottom: 2px solid var(--ink); }
+.pos { color: var(--win); } .neg { color: var(--loss); }
+.legend { font-size: 13px; color: var(--muted); margin-top: 12px; }
+
+.award .kicker { margin-bottom: 10px; }
+.award h3 { font-size: 26px; line-height: 1.05; overflow-wrap: anywhere; }
+.award .val { font: 700 28px var(--mono); margin: 10px 0 4px; }
+.award p { font-size: 14.5px; margin: 6px 0 0; }
+
+.roundup p { font-size: 17px; margin: 0 0 16px; }
+.roundup p:first-of-type::first-letter { font: 800 64px/0.8 var(--serif); float: left; margin: 6px 8px 0 0; color: var(--accent); }
+.archive { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.archive a { display: inline-block; padding: 6px 12px; border: 1px solid var(--rule); border-radius: 999px; color: var(--ink); text-decoration: none; font: 500 13px var(--mono); }
+.archive a.cur { border-color: var(--accent); color: var(--accent); }
+.feature { margin-top: 24px; border: 1.5px solid var(--ink); padding: 20px; }
+.feature .side .pts { font-size: 26px; }
+.feature .side .team { font-family: var(--serif); font-weight: 800; font-size: 22px; letter-spacing: -.02em; }
+.feature .blurb { font-size: 16px; }
+.inj { font-size: 13px; color: var(--muted); margin: 8px 0 0; }
+.inj .kicker { display: inline; margin-right: 6px; font-size: 10px; }
+.inj b { color: var(--loss); font-weight: 600; }
+.lede.small h2 { font-size: clamp(32px, 7vw, 44px); margin: 8px 0 12px; }
+.section-copy { font-size: 16px; margin: 0 0 16px; }
+.pecking { list-style: none; padding: 0; margin: 0; border-top: 1px solid var(--rule); }
+.pecking li { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--rule); }
+.pecking .rk { font: 800 24px var(--serif); color: var(--accent); }
+.pecking .nm { min-width: 0; }
+.pecking .nm b { display: block; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pecking small { display: block; font-size: 12px; color: var(--muted); }
+.pecking .st { display: flex; gap: 14px; font: 700 14px var(--mono); text-align: right; }
+.pecking .st small { font: 500 9px var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+.tiers { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr)); }
+.tier { border-top: 3px solid var(--rule); padding-top: 8px; min-width: 0; }
+.tier-in { border-top-color: var(--win); } .tier-miracle { border-top-color: var(--loss); }
+.tier ul { list-style: none; padding: 0; margin: 0; font-size: 14.5px; }
+.tier li { padding: 3px 0; overflow-wrap: anywhere; }
+.tier li .meta { white-space: nowrap; }
+.more { margin-top: 20px; display: flex; gap: 20px; flex-wrap: wrap; }
+.more a { color: var(--accent); font-weight: 600; text-decoration: none; }
+@media (max-width: 480px) { .pecking .st span:nth-child(2) { display: none; } }
+.training { margin-top: 44px; border-left: 4px solid var(--loss); }
+.training header { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 12px; align-items: center; margin-top: 4px; }
+.training .logo { width: 44px; height: 44px; }
+.training h3 { font-size: 28px; line-height: 1.05; overflow-wrap: anywhere; }
+.training .blurb { border-top: 0; padding-top: 0; font-size: 16px; }
+.report { list-style: none; padding: 0; margin: 12px 0 0; border-top: 1px solid var(--rule); }
+.report li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--rule); }
+.report .nm { min-width: 0; }
+.report small { display: block; color: var(--muted); font-size: 12px; }
+.report li.dead small { color: var(--loss); font-weight: 600; }
+.chip { flex: none; font: 700 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--loss);
+  border: 1px solid currentColor; border-radius: 999px; padding: 3px 8px; }
+.league-inj { margin: 12px 0 0; }
+footer { border-top: 1px solid var(--rule); padding-top: 20px; padding-bottom: 40px; }
+</style>
+</head>
+<body>
+{% macro logo(tid, cls="logo") -%}
+  {%- set t = teams[tid] -%}
+  {%- if t.logo and not t.is_fake -%}<img class="{{ cls }}" src="{{ t.logo }}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'{{ cls }} ph',textContent:'{{ t.abbrev[:3] }}'}))">
+  {%- else -%}<span class="{{ cls }} ph">{{ "MED" if t.is_fake else t.abbrev[:3] }}</span>{%- endif -%}
+{%- endmacro %}
+{% macro tname(tid) -%}{{ "The Median" if teams[tid].is_fake else teams[tid].name }}{%- endmacro %}
+{% macro injuries(list) -%}
+  {%- if list %}<p class="inj"><span class="kicker">Injury watch</span> {% for p in list %}{{ p.name }} <b>{{ p.injury|replace("_", " ")|lower }}</b>{{ ", " if not loop.last }}{% endfor %}</p>{% endif -%}
+{%- endmacro %}
+{% macro side(s, other, final) -%}
+  {%- set t = teams[s.team_id] -%}
+  <div class="side {% if final %}{{ 'won' if s.score > other.score else 'lost' }}{% endif %}">
+    {{ logo(s.team_id) }}
+    <div class="nm"><span class="team">{{ tname(s.team_id) }}</span>
+      <span class="mgr">{% if t.is_fake %}<span class="median-tag">LEAGUE MEDIAN</span>{% else %}{{ t.manager }} · {{ t.wins }}-{{ t.losses }}{% endif %}</span></div>
+    <span class="pts">{% if final %}{{ "%.1f"|format(s.score) }}{% elif t.is_fake %}—{% else %}{{ "%.1f"|format(s.projected) }}{% endif %}</span>
+  </div>
+{%- endmacro %}
+
+<header class="masthead wrap">
+  <p class="kicker">{{ data.league_name }} · {{ data.season }} · Regular season</p>
+  <h1>Week {{ hero_week }}</h1>
+  <p class="dek">{{ copy.dek }}</p>
+  <div class="asof meta">Data as of {{ as_of }}</div>
+</header>
+
+<nav class="tabs" aria-label="Sections"><div class="wrap">
+  <a href="#home" data-tab="home">Home</a>
+  <a href="#teams" data-tab="teams">Teams</a>
+  <a href="#standings" data-tab="standings">Standings</a>
+  <a href="#awards" data-tab="awards">Awards</a>
+  <a href="#roundup" data-tab="roundup">Round Up</a>
+</div></nav>
+
+<main class="wrap">
+  <section class="tab" id="home">
+    <p class="meta">Updated {{ as_of }} · Scores final through week {{ week }}{% if data.next_week %} · Next update after week {{ data.next_week }}{% endif %}</p>
+
+    {% if upcoming or gotw %}
+    <div class="lede">
+      <p class="kicker" style="margin-top:24px">This week · Week {{ data.next_week }}</p>
+      <h2>{{ copy.preview_headline }}</h2>
+      {% for p in copy.preview_intro %}<p>{{ p }}</p>{% endfor %}
+    </div>
+
+    {% if gotw %}
+    <article class="card match feature">
+      <p class="kicker">Game of the Week</p>
+      {{ side(gotw.home, gotw.away, false) }}
+      {{ side(gotw.away, gotw.home, false) }}
+      {% if gotw.why or gotw.blurb %}<p class="blurb">{{ gotw.why or gotw.blurb }}</p>{% endif %}
+      {{ injuries(gotw.injuries) }}
+    </article>
+    {% endif %}
+
+    <div class="section-head"><h3>Week {{ data.next_week }} Matchups</h3><span class="meta">Projected points</span></div>
+    <div class="cards">
+      {% for m in upcoming %}
+      <article class="card match">
+        {{ side(m.home, m.away, false) }}
+        {{ side(m.away, m.home, false) }}
+        {% if m.blurb %}<p class="blurb">{{ m.blurb }}</p>{% endif %}
+        {{ injuries(m.injuries) }}
+      </article>
+      {% endfor %}
+    </div>
+
+    {% if spotlight %}
+    {% set st = teams[spotlight.team_id] %}
+    <article class="card training">
+      <p class="kicker">The Training Room</p>
+      <header>
+        {{ logo(spotlight.team_id) }}
+        <div style="min-width:0"><h3>{{ st.name }}</h3><span class="meta">{{ st.manager }} · {{ st.wins }}-{{ st.losses }} · {{ spotlight.players|length }} on the injury report</span></div>
+      </header>
+      {% if copy.injury_spotlight %}<p class="blurb">{{ copy.injury_spotlight }}</p>{% endif %}
+      <ul class="report">
+        {% for p in spotlight.players %}
+        <li class="{{ 'dead' if p.dead_slot }}">
+          <span class="nm"><b>{{ p.name }}</b> <small>{{ p.pos }} · {{ {"starter": "starting", "bench": "bench", "ir": "IR slot"}[p.role] }}{% if p.role != "ir" %} · proj {{ "%.1f"|format(p.proj) }}{% endif %}</small></span>
+          <span class="chip">{{ p.injury|replace("_", " ")|lower }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% if injury_counts|length > 1 %}
+      <p class="league-inj meta">League injury report ·
+        {% for r in injury_counts[:5] %}{{ teams[r.team_id].manager }} {{ r.players|length }}{{ " · " if not loop.last }}{% endfor %}</p>
+      {% endif %}
+    </article>
+    {% endif %}
+
+    <div class="section-head"><h3>The Pecking Order</h3><span class="meta">Power rankings · through week {{ week }}</span></div>
+    <p class="section-copy">{{ copy.power }}</p>
+    <ol class="pecking">
+      {% for r in power %}
+      <li><span class="rk">{{ r.power }}</span>
+        <span class="nm"><b>{{ r.name }}</b><small>{{ r.manager }} · {{ r.wins }}-{{ r.losses }}</small></span>
+        <span class="st"><span>{{ r.ap_w }}-{{ r.ap_l }}<small>all-play</small></span><span>{{ "%.1f"|format(r.avg) }}<small>avg</small></span>
+          <span class="{{ 'pos' if r.luck > 0.4 else ('neg' if r.luck < -0.4 else '') }}">{{ "%+.1f"|format(r.luck) }}<small>luck</small></span></span></li>
+      {% endfor %}
+    </ol>
+
+    {% if tiers %}
+    <div class="section-head"><h3>Road to the Playoffs</h3><span class="meta">{% if playoffs_early %}Way too early · {% endif %}If the season ended today · {{ data.playoff_teams }} get in</span></div>
+    <p class="section-copy">{{ copy.playoffs }}</p>
+    <div class="tiers">
+      {% for key, label in [("in", "In right now"), ("knocking", "Knocking"), ("long_shots", "Long shots"), ("miracle", "Need a miracle")] %}
+      {% if tiers[key] %}
+      <div class="tier tier-{{ key }}"><p class="kicker">{{ label }}</p>
+        <ul>{% for r in tiers[key] %}<li>{{ r.name }} <span class="meta">{{ r.wins }}-{{ r.losses }}</span></li>{% endfor %}</ul></div>
+      {% endif %}
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% endif %}
+
+    <div class="section-head"><h3>Last Week</h3><span class="meta">Week {{ week }} · final{% if median is not none %} · median {{ "%.2f"|format(median) }}{% endif %}</span></div>
+    <div class="lede small">
+      <h2>{{ copy.recap_headline }}</h2>
+      {% for p in copy.recap %}<p>{{ p }}</p>{% endfor %}
+    </div>
+    <div class="cards">
+      {% for m in results %}
+      <article class="card match">
+        {{ side(m.home, m.away, true) }}
+        {{ side(m.away, m.home, true) }}
+        {% set w = m.home if m.home.score >= m.away.score else m.away %}
+        {% if w.top_starter and not teams[w.team_id].is_fake %}<p class="top">Top gun: {{ w.top_starter.name }} ({{ w.top_starter.pos }}) {{ "%.1f"|format(w.top_starter.pts) }}</p>{% endif %}
+        {% if m.blurb %}<p class="blurb">{{ m.blurb }}</p>{% endif %}
+      </article>
+      {% endfor %}
+    </div>
+    <p class="more"><a href="#awards">Week {{ week }} awards →</a> <a href="#standings">Full standings →</a></p>
+  </section>
+
+  <section class="tab" id="teams">
+    <div class="section-head" style="margin-top:0"><h3>The Teams</h3><span class="meta">Weekly scores · green = W</span></div>
+    <div class="cards">
+      {% set maxs = (table | map(attribute='scores') | map('max') | max) if table and table[0].scores else 1 %}
+      {% for r in table %}
+      <article class="card team-card">
+        <header>
+          {{ logo(r.id) }}
+          <div style="min-width:0"><h3>{{ r.name }}</h3><span class="meta">{{ r.manager }}</span></div>
+          <div class="rec">{{ r.wins }}-{{ r.losses }}<small>#{{ r.standing }}</small></div>
+        </header>
+        <div class="spark" aria-hidden="true">
+          {% for s in r.scores %}{% set wk = loop.index %}
+          {% set res = namespace(c='') %}{% for m in data.weeks[wk|string] %}{% for a, b in [(m.home, m.away), (m.away, m.home)] %}{% if a.team_id == r.id %}{% set res.c = 'w' if a.score > b.score else 'l' %}{% endif %}{% endfor %}{% endfor %}
+          <span class="{{ res.c }}" style="height:{{ (s / maxs * 100)|round(1) }}%" title="Wk {{ wk }}: {{ '%.1f'|format(s) }}"></span>
+          {% endfor %}
+        </div>
+        <div class="stats meta"><span>PF {{ "%.1f"|format(r.pf) }}</span><span>Power #{{ r.power }}</span><span>vs Median {{ r.med_w }}-{{ r.med_l }}</span></div>
+        {% if team_blurbs.get(r.id) %}<p>{{ team_blurbs[r.id] }}</p>{% endif %}
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="tab" id="standings">
+    <div class="section-head" style="margin-top:0"><h3>Standings</h3><span class="meta">Through week {{ week }}</span></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>#</th><th class="tm">Team</th><th>W-L</th><th>PF</th><th>PA</th><th>All-Play</th><th>vs Med</th><th>Luck</th><th>Pwr</th><th>Strk</th></tr></thead>
+        <tbody>
+        {% for r in table %}
+          <tr><td class="num">{{ r.standing }}</td>
+            <td class="tm">{{ r.name }}<small>{{ r.manager }}</small></td>
+            <td class="num">{{ r.wins }}-{{ r.losses }}</td>
+            <td class="num">{{ "%.1f"|format(r.pf) }}</td>
+            <td class="num">{{ "%.1f"|format(r.pa) }}</td>
+            <td class="num">{{ r.ap_w }}-{{ r.ap_l }}</td>
+            <td class="num">{{ r.med_w }}-{{ r.med_l }}</td>
+            <td class="num {{ 'pos' if r.luck > 0.4 else ('neg' if r.luck < -0.4 else '') }}">{{ "%+.1f"|format(r.luck) }}</td>
+            <td class="num">{{ r.power }}</td>
+            <td class="num">{{ r.streak }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="legend"><b>All-Play</b>: record if you played every team every week. <b>vs Med</b>: weeks above the league median. <b>Luck</b>: actual wins minus all-play-expected wins. <b>Pwr</b>: rank by all-play win %.</p>
+  </section>
+
+  <section class="tab" id="awards">
+    <div class="section-head" style="margin-top:0"><h3>Week {{ week }} Awards</h3></div>
+    <div class="cards">
+      {% for a in awards %}
+      <article class="card award">
+        <p class="kicker">{{ a.title }}</p>
+        <h3>{{ teams[a.team_id].name }}</h3>
+        <span class="meta">{{ teams[a.team_id].manager }}</span>
+        <div class="val">{{ "%.1f"|format(a.value) }}</div>
+        <p>{{ a.quip }}</p>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="tab roundup" id="roundup">
+    <p class="kicker">The Round Up · Week {{ week }}</p>
+    <h2 style="font-size:clamp(40px,9vw,60px);margin:4px 0 24px">State of the League</h2>
+    {% for p in copy.round_up %}<p>{{ p }}</p>{% endfor %}
+    <div class="section-head"><h3>Archive</h3></div>
+    <ul class="archive">
+      {% for w in archive %}<li><a class="{{ 'cur' if w == week else '' }}" href="{{ root }}weeks/week{{ w }}.html">Week {{ w }}</a></li>{% endfor %}
+    </ul>
+  </section>
+</main>
+
+<footer class="wrap meta">{{ data.league_name }} · generated {{ data.generated_at.replace('T', ' ') }} · <a href="{{ root }}index.html" style="color:inherit">latest</a></footer>
+
+<script>
+(function () {
+  document.documentElement.classList.add("js");
+  var tabs = ["home", "teams", "standings", "awards", "roundup"];
+  function show() {
+    var id = location.hash.slice(1);
+    if (tabs.indexOf(id) < 0) id = "home";
+    tabs.forEach(function (t) {
+      document.getElementById(t).classList.toggle("active", t === id);
+      var a = document.querySelector('nav.tabs a[data-tab="' + t + '"]');
+      if (t === id) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+    });
+  }
+  window.addEventListener("hashchange", function () { show(); window.scrollTo(0, document.querySelector("nav.tabs").offsetTop); });
+  show();
+})();
+</script>
+</body>
+</html>

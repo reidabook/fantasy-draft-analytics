@@ -33,6 +33,7 @@ from src.weekly.payout import compute_median, find_high_scorer
 from src.weekly.commish_override import override_fake_team_score, NotConfiguredError, NoSavedSessionError
 from src.weekly.notify import send_weekly_report
 from src.weekly.imessage import build_group_text
+from build_site import SITE_URL, build_site
 
 PENDING_GROUP_TEXT_PATH = "logs/pending_group_text.txt"
 
@@ -115,6 +116,11 @@ def main() -> None:
                 fake_opponent_score=fake_opponent_info[1] if fake_opponent_info else None,
                 team_to_manager=team_to_manager,
             )
+            text += (
+                f"\n\nFull recap, standings and awards: {SITE_URL}\n"
+                f"Bookmark it — next week's report lands there too, and it's the place to scout "
+                f"matchups before Week {week + 1}."
+            )
             os.makedirs(os.path.dirname(PENDING_GROUP_TEXT_PATH), exist_ok=True)
             with open(PENDING_GROUP_TEXT_PATH, "w") as f:
                 f.write(text)
@@ -123,8 +129,16 @@ def main() -> None:
             print("-" * 60)
             print(text)
             print("-" * 60)
+
+        # Rebuild + publish the league site. Refetches the league rather than
+        # reusing `league`, whose records predate the override (which can flip
+        # the Fake team's result). Never blocks the email/group text above.
+        try:
+            build_site(week, do_publish=True)
+        except Exception as e:
+            print(f"Site build/publish FAILED: {e}")
     else:
-        print("(dry-run: skipping email and group text)")
+        print("(dry-run: skipping email, group text and site)")
 
 
 if __name__ == "__main__":

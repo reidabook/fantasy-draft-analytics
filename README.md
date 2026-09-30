@@ -245,6 +245,19 @@ crontab -e
 
 ---
 
+## In-Season: League Site
+
+`build_site.py` renders a weekly newsletter-style site (Home / Teams / Standings / Awards / Round Up) for the ESPN league and publishes it to GitHub Pages at https://reidabook.github.io/ticerado-bowl/. `weekly_update.py` runs it automatically after the median override.
+
+- Code lives in `src/site/`; only the rendered HTML is pushed to the **public** repo cloned at `SITE_REPO_PATH` (this repo stays private).
+- Headline, recaps, team blurbs and round-up are written by Claude via the local Claude Code CLI (`claude -p`, uses your subscription — no API key), cached per week in `data/site/`. `--no-ai` uses templated text.
+
+```bash
+python build_site.py --week 3 --no-ai --out /tmp/site   # local preview, no API call
+python build_site.py --publish                          # latest completed week -> Pages
+python build_site.py --week 3 --refresh-copy --publish  # regenerate Claude copy
+```
+
 ## Troubleshooting
 
 | Issue | Fix |
