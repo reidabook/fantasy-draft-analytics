@@ -135,6 +135,8 @@ tr.cut td { border-bottom: 2px solid var(--ink); }
 .chip { flex: none; font: 700 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--loss);
   border: 1px solid currentColor; border-radius: 999px; padding: 3px 8px; }
 .league-inj { margin: 12px 0 0; }
+.archived { background: var(--ink); color: var(--bg); font: 500 12px var(--mono); letter-spacing: .06em; padding: 10px 0; }
+.archived a { color: inherit; font-weight: 700; }
 footer { border-top: 1px solid var(--rule); padding-top: 20px; padding-bottom: 40px; }
 </style>
 </head>
@@ -158,6 +160,9 @@ footer { border-top: 1px solid var(--rule); padding-top: 20px; padding-bottom: 4
   </div>
 {%- endmacro %}
 
+{% if hero_week != archive[0] %}
+<div class="archived"><div class="wrap">Archived issue · Week {{ hero_week }} · <a href="{{ root }}index.html">Go to the latest issue →</a></div></div>
+{% endif %}
 <header class="masthead wrap">
   <p class="kicker">{{ data.league_name }} · {{ data.season }} · Regular season</p>
   <h1>Week {{ hero_week }}</h1>
@@ -343,7 +348,7 @@ footer { border-top: 1px solid var(--rule); padding-top: 20px; padding-bottom: 4
     {% for p in copy.round_up %}<p>{{ p }}</p>{% endfor %}
     <div class="section-head"><h3>Archive</h3></div>
     <ul class="archive">
-      {% for w in archive %}<li><a class="{{ 'cur' if w == week else '' }}" href="{{ root }}weeks/week{{ w }}.html">Week {{ w }}</a></li>{% endfor %}
+      {% for w in archive %}<li><a class="{{ 'cur' if w == hero_week else '' }}" href="{{ root }}weeks/week{{ w }}.html">Week {{ w }}</a></li>{% endfor %}
     </ul>
   </section>
 </main>

@@ -23,7 +23,7 @@ def _side(tid, score, starters=(), bench=()):
 
 
 def _team(tid, standing, wins=0, losses=0, is_fake=False):
-    return {"id": tid, "name": f"T{tid}", "manager": f"M{tid}", "wins": wins, "losses": losses,
+    return {"id": tid, "name": f"T{tid}", "abbrev": f"T{tid}", "logo": None, "manager": f"M{tid}", "wins": wins, "losses": losses,
             "pf": 0.0, "pa": 0.0, "standing": standing, "streak": "", "is_fake": is_fake}
 
 

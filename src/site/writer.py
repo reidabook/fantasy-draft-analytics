@@ -72,7 +72,7 @@ really playing "the median"; call it The Median. It never wins awards and has no
 
 Fields:
 - dek: 1-2 sentences under the big "Week N" masthead setting up the upcoming week.
-- preview_headline: 2-5 punchy words about the upcoming week (like "Somebody's Getting Exposed").
+- preview_headline: 2-5 punchy, original words about the upcoming week.
 - preview_intro: 1-2 short paragraphs framing the upcoming week — storylines, stakes, standings pressure; \
 end by teeing up the matchups.
 - game_of_week: pick the single most compelling upcoming matchup; blurb 2-3 sentences on why.
