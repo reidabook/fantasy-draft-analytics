@@ -17,10 +17,11 @@ Run the weekly median-score override + payout report for this fantasy league.
 3. Report back concisely: the computed median, the Fake team's override
    status (succeeded/failed and why), and the week's high scorer (the Venmo
    payout winner) with the prefilled Venmo pay link the script printed, if any. Don't just paste raw script output — summarize it.
-4. weekly_update.py never sends the league group text itself — it stages a
-   plain draft at logs/pending_group_text.txt and prints it (unless
-   `--dry-run` was passed, which skips it entirely). Don't send that draft
-   as-is. Use it only for the week's numbers, and write a new group text:
+4. weekly_update.py never sends the league group texts itself — it stages a
+   plain recap draft at logs/pending_group_text.txt and the site link at
+   logs/pending_group_link.txt, and prints both (unless `--dry-run` was
+   passed, which skips them entirely). Don't send the recap draft as-is.
+   Use it only for the week's numbers, and write a new group text:
    - **Text 1 — narrative recap.** Read the published league site (the local
      render at `../ticerado-bowl/index.html`, especially its "Last Week" and
      "This week" sections) and write a short story of the week, not a list of
@@ -31,16 +32,15 @@ Run the weekly median-score override + payout report for this fantasy league.
      teasing friendly. Every number and claim must come from the site or the
      script output. Point out any claim you inferred instead of reading
      directly (e.g. a record going into the week).
-   - **Text 2 — the site link alone** (e.g.
-     `https://reidabook.github.io/ticerado-bowl/`), with no "Full recap,
-     standings and awards:" label. Remove that line from Text 1.
+   - **Text 2 — the site link alone**, already staged in
+     logs/pending_group_link.txt. Leave it as is.
    Show the user both texts verbatim and ask them to approve before anything
    goes out to the whole group.
-5. Only if the user approves, send them as two separate messages.
-   send_group_text.py sends the whole file as one message and deletes the
-   file afterward, so:
-   - write Text 1 to logs/pending_group_text.txt, run
-     `.venv/bin/python send_group_text.py`;
-   - then write Text 2 to logs/pending_group_text.txt, run it again.
-   If they want changes instead, do NOT send. Ask what to change, revise,
-   and show both texts again.
+5. Only if the user approves, write Text 1 to logs/pending_group_text.txt,
+   then run:
+   ```
+   .venv/bin/python send_group_text.py
+   ```
+   It sends the recap, then the link, as two separate messages, and deletes
+   each file once it's sent. If they want changes instead, do NOT send. Ask
+   what to change, revise, and show both texts again.

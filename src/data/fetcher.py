@@ -168,6 +168,7 @@ def espn_get_weekly_scores(espn_league, week: Optional[int] = None) -> Dict[str,
 # league actually uses). Keyed by (firstName, lastName) lowercased so it
 # survives however ESPN capitalizes a given owner's profile.
 _MANAGER_LABEL_OVERRIDES = {
+    ("alex", "costa"): "Costa",
     ("matt", "medvene"): "Medvene",
     ("tyler", "carwell"): "Tex",
 }

@@ -109,6 +109,55 @@ class TestBuildGroupTextManagerLabels(unittest.TestCase):
         )
         self.assertIn("The Hebrew Hammer", text)
 
+    def test_sender_as_fake_opponent_is_first_person(self):
+        text = build_group_text(
+            week=1,
+            median=100.0,
+            fake_team_name=FAKE,
+            override_ok=True,
+            high_scorer="The Hebrew Hammer",
+            high_score=150.0,
+            scores={"The Hebrew Hammer": 150.0, "Nice Pitts": 120.0, FAKE: 80.0},
+            fake_opponent="Nice Pitts",
+            fake_opponent_score=120.0,
+            team_to_manager=MANAGERS,
+            sender="tex",
+        )
+        self.assertIn(f"I cleared {FAKE}'s median", text)
+        self.assertNotIn("Tex", text)
+        self.assertIn("Medvene takes the top score with 150.00 — congrats.", text)
+
+    def test_sender_as_high_scorer_is_first_person_without_congrats(self):
+        text = build_group_text(
+            week=1,
+            median=100.0,
+            fake_team_name=FAKE,
+            override_ok=True,
+            high_scorer="Nice Pitts",
+            high_score=150.0,
+            scores={"Nice Pitts": 150.0, "L.A. Kimballs": 140.0, FAKE: 80.0},
+            team_to_manager=MANAGERS,
+            sender="Tex",
+        )
+        self.assertIn("Week 1: I take the top score with 150.00.", text)
+        self.assertNotIn("congrats", text)
+
+    def test_sender_in_same_team_branch_is_first_person(self):
+        text = build_group_text(
+            week=1,
+            median=100.0,
+            fake_team_name=FAKE,
+            override_ok=True,
+            high_scorer="Nice Pitts",
+            high_score=150.0,
+            scores={"Nice Pitts": 150.0, FAKE: 80.0},
+            fake_opponent="Nice Pitts",
+            fake_opponent_score=150.0,
+            team_to_manager=MANAGERS,
+            sender="Tex",
+        )
+        self.assertIn("Week 1: I take the top score with 150.00 — and casually cleared", text)
+
 
 if __name__ == "__main__":
     unittest.main()

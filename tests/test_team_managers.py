@@ -27,6 +27,10 @@ class TestEspnGetTeamManagers(unittest.TestCase):
         league = FakeLeague([FakeTeam("L.A. Kimballs", [owner("Greg", "Spear")])])
         self.assertEqual(espn_get_team_managers(league), {"L.A. Kimballs": "Greg"})
 
+    def test_costa_override(self):
+        league = FakeLeague([FakeTeam("Daejon Love Bomb", [owner("Alex", "Costa")])])
+        self.assertEqual(espn_get_team_managers(league), {"Daejon Love Bomb": "Costa"})
+
     def test_medvene_override(self):
         league = FakeLeague([FakeTeam("The Hebrew Hammer", [owner("Matt", "Medvene")])])
         self.assertEqual(espn_get_team_managers(league), {"The Hebrew Hammer": "Medvene"})

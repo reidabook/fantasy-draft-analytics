@@ -64,6 +64,7 @@ def build_group_text(
     fake_opponent: Optional[str] = None,
     fake_opponent_score: Optional[float] = None,
     team_to_manager: Optional[dict] = None,
+    sender: Optional[str] = None,
 ) -> str:
     """
     Build the snarky league group-text summary: congratulate the week's high
@@ -80,20 +81,29 @@ def build_group_text(
     displayed text — team names get renamed week to week, managers don't.
     All name comparisons/lookups below stay keyed by team name; only the
     text that gets rendered is relabeled.
+
+    `sender` is the manager label of whoever the text goes out from. The
+    text is sent from their own phone, so their team is written in the first
+    person ("I cleared...") rather than naming them in the third.
     """
     team_to_manager = team_to_manager or {}
     label = lambda name: team_to_manager.get(name, name)
+    is_sender = lambda name: sender is not None and label(name).lower() == sender.lower()
+    subject = lambda name: "I" if is_sender(name) else label(name)
+    takes = "take" if is_sender(high_scorer) else "takes"
 
     blocks = []
     same_team = fake_opponent is not None and fake_opponent == high_scorer
 
     if same_team:
         blocks.append(
-            f"Week {week}: {label(high_scorer)} takes the top score with {high_score:.2f} — and casually "
+            f"Week {week}: {subject(high_scorer)} {takes} the top score with {high_score:.2f} — and casually "
             f"cleared {fake_team_name}'s median ({median:.2f}) too. Overkill much?"
         )
     else:
-        top_block = [f"Week {week}: {label(high_scorer)} takes the top score with {high_score:.2f} — congrats."]
+        # No congratulating yourself when the sender is the high scorer.
+        congrats = "." if is_sender(high_scorer) else " — congrats."
+        top_block = [f"Week {week}: {subject(high_scorer)} {takes} the top score with {high_score:.2f}{congrats}"]
         others = sorted((s for name, s in scores.items() if name != high_scorer), reverse=True)
         if others and high_score - others[0] >= 25:
             top_block.append(f"Nobody else was within {high_score - others[0]:.0f} points. Not exactly a nail-biter.")
@@ -104,14 +114,14 @@ def build_group_text(
             if fake_opponent_score <= median:
                 margin = median - fake_opponent_score
                 fake_block.append(
-                    f"{label(fake_opponent)} needed to beat {fake_team_name}'s median ({median:.2f}) and scored "
+                    f"{subject(fake_opponent)} needed to beat {fake_team_name}'s median ({median:.2f}) and scored "
                     f"{fake_opponent_score:.2f} instead — lost to a team that doesn't exist, by {margin:.2f}."
                 )
                 if margin >= 20:
                     fake_block.append("That's not a loss, that's a cry for help.")
             else:
                 fake_block.append(
-                    f"{label(fake_opponent)} cleared {fake_team_name}'s median ({median:.2f}) with "
+                    f"{subject(fake_opponent)} cleared {fake_team_name}'s median ({median:.2f}) with "
                     f"{fake_opponent_score:.2f}. No shame there."
                 )
             blocks.append("\n".join(fake_block))

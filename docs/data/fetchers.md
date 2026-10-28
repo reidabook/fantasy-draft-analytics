@@ -111,6 +111,13 @@ overrides the Fake team's ESPN score to that median via Playwright browser
 automation (ESPN has no write API for this), and emails a report with the median
 and the week's high scorer (for a Venmo payout).
 
+**Venmo pay link**: Venmo has no public API for personal payments, so the payout isn't
+sent automatically — the email carries a prefilled pay link instead (recipient, amount,
+"Week N high score" note; one tap + confirm in the app). `payout.py::payout_line()` builds
+it from `VENMO_HANDLES` (manager label → handle) and `HIGH_SCORE_PAYOUT` (default 5).
+Regular season only (`week <= league.settings.reg_season_count`); a tie is flagged with no
+link; a winner with no configured handle (e.g. yourself) gets a plain "Venmo them".
+
 The click-path (direct scoreboard URL + matchup lookup by `data-team`/`href` team id,
 since the Fake team's opponent/position on the board changes weekly) was found by
 inspecting the real live league's DOM and is baked into `src/weekly/commish_override.py`.

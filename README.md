@@ -170,7 +170,8 @@ VBD is recalculated per-league using each league's exact scoring config and team
 For leagues with an odd number of real teams padded out with a "Fake team": after each
 week's games finish, `weekly_update.py` fetches every team's score, computes the median
 (excluding the Fake team), overrides the Fake team's ESPN score to that median, and
-emails you the median plus the week's high scorer (for a Venmo payout). See
+emails you the median plus the week's high scorer, with a prefilled Venmo pay link
+(set `VENMO_HANDLES` in `.env`; regular season only — stops at the playoffs). See
 `docs/data/fetchers.md` for the full design.
 
 ### One-time setup
@@ -204,15 +205,21 @@ python weekly_update.py                      # defaults to the most recently com
 ```
 
 If `IMESSAGE_GROUP_CHAT_ID` is set, a real run also stages a snarky group-text
-summary at `logs/pending_group_text.txt` and prints it — it is **not** sent
-automatically. Review it, then send it with:
+summary at `logs/pending_group_text.txt` and the league site link at
+`logs/pending_group_link.txt`, and prints both — they are **not** sent
+automatically. Review them, then send them with:
 
 ```bash
 python send_group_text.py
 ```
 
-(Re-running `weekly_update.py` regenerates that file; you can also hand-edit
-it before sending — `send_group_text.py` just sends whatever's in it.)
+That sends the recap and then the link as two separate texts. (Re-running
+`weekly_update.py` regenerates both files; you can also hand-edit them before
+sending — `send_group_text.py` just sends whatever's in them, deleting each
+one after it's sent.)
+
+Set `GROUP_TEXT_SENDER` to your own manager label and the text refers to your
+team in the first person ("I cleared...") — it goes out from your phone.
 
 ### Running it manually each week (current setup)
 

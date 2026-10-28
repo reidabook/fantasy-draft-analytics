@@ -21,6 +21,7 @@ def send_weekly_report(
     high_scorer: str,
     high_score: float,
     error: Optional[str] = None,
+    payout_line: Optional[str] = None,
 ) -> None:
     gmail_address = os.getenv("GMAIL_ADDRESS")
     gmail_password = os.getenv("GMAIL_APP_PASSWORD")
@@ -41,7 +42,7 @@ def send_weekly_report(
             f"Week {week} median (excluding {fake_team_name}): {median:.2f}",
             f"{fake_team_name} score overridden to {median:.2f}.",
             "",
-            f"High score payout: {high_scorer} with {high_score:.2f} — Venmo them.",
+            payout_line,
         ]
     else:
         msg["Subject"] = f"Week {week}: median {median:.2f} — ESPN override FAILED, set it manually"
@@ -51,8 +52,7 @@ def send_weekly_report(
             f"{median:.2f} by hand in ESPN's commissioner tool.",
             f"Error: {error}" if error else "",
             "",
-            f"High score payout (unaffected by the override failure): "
-            f"{high_scorer} with {high_score:.2f} — Venmo them.",
+            payout_line,
         ]
 
     body.append("")
