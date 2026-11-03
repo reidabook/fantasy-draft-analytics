@@ -171,6 +171,7 @@ _MANAGER_LABEL_OVERRIDES = {
     ("alex", "costa"): "Costa",
     ("matt", "medvene"): "Medvene",
     ("tyler", "carwell"): "Tex",
+    ("daniel", "gardiner"): "Dan",
 }
 
 
