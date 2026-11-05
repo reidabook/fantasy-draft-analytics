@@ -247,7 +247,7 @@ ESPN's site by hand — this writes to a live league:
 ```bash
 crontab -e
 # Add:
-0 9 * * 2 cd /Users/reidfrancis/projects/fantasy-draft-analytics && .venv/bin/python weekly_update.py >> logs/weekly_update.log 2>&1
+0 9 * * 2 cd /path/to/fantasy-draft-analytics && .venv/bin/python weekly_update.py >> logs/weekly_update.log 2>&1
 ```
 
 ---
